@@ -1,0 +1,720 @@
+import XCTest
+@testable import CodeIslandCore
+
+final class JSONLTailerTests: XCTestCase {
+
+    // MARK: - scanLines (pure)
+
+    func testScanLinesEmptyInputProducesEmptyDeltaAndFragment() {
+        let result = JSONLTailer.scanLines(Data())
+        XCTAssertTrue(result.delta.isEmpty)
+        XCTAssertEqual(result.trailingFragment, Data())
+    }
+
+    func testScanLinesExtractsAssistantTextFromSingleLine() {
+        let line = assistantLine(text: "hello world") + "\n"
+        let result = JSONLTailer.scanLines(Data(line.utf8))
+        XCTAssertEqual(result.delta.lastAssistantMessage, "hello world")
+        XCTAssertNil(result.delta.lastUserPrompt)
+        XCTAssertEqual(result.trailingFragment, Data())
+    }
+
+    func testScanLinesExtractsUserPromptFromSingleLine() {
+        let line = userLine(text: "what's the weather?") + "\n"
+        let result = JSONLTailer.scanLines(Data(line.utf8))
+        XCTAssertEqual(result.delta.lastUserPrompt, "what's the weather?")
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesLatestLineWinsForEachRole() {
+        let bytes = Data(([
+            assistantLine(text: "first reply"),
+            userLine(text: "first question"),
+            assistantLine(text: "second reply"),
+            userLine(text: "second question"),
+        ].joined(separator: "\n") + "\n").utf8)
+
+        let result = JSONLTailer.scanLines(bytes)
+        XCTAssertEqual(result.delta.lastAssistantMessage, "second reply")
+        XCTAssertEqual(result.delta.lastUserPrompt, "second question")
+    }
+
+    func testScanLinesTrailingPartialLineReturnsAsFragment() {
+        let completeLine = assistantLine(text: "done") + "\n"
+        let partial = "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"half"
+        let combined = Data((completeLine + partial).utf8)
+
+        let result = JSONLTailer.scanLines(combined)
+        XCTAssertEqual(result.delta.lastAssistantMessage, "done")
+        XCTAssertEqual(result.trailingFragment, Data(partial.utf8))
+    }
+
+    func testScanLinesIgnoresIsMetaLines() {
+        let meta = """
+        {"type":"assistant","isMeta":true,"message":{"content":[{"type":"text","text":"boot"}]}}
+        """
+        let real = assistantLine(text: "real reply")
+        let combined = Data((meta + "\n" + real + "\n").utf8)
+
+        let result = JSONLTailer.scanLines(combined)
+        XCTAssertEqual(result.delta.lastAssistantMessage, "real reply")
+    }
+
+    func testScanLinesIgnoresUnknownType() {
+        let line = """
+        {"type":"tool_use","message":{"content":[{"type":"text","text":"internal"}]}}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertTrue(result.delta.isEmpty)
+    }
+
+    func testScanLinesExtractsAntigravityUserInputWithTags() {
+        let line = """
+        {"type":"USER_INPUT","content":"<USER_REQUEST>\\nhello world\\n</USER_REQUEST>"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastUserPrompt, "hello world")
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesExtractsAntigravityUserInputWithoutTags() {
+        let line = """
+        {"type":"USER_INPUT","content":"hello world"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastUserPrompt, "hello world")
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesExtractsAntigravityPlannerResponseWithContent() {
+        let line = """
+        {"type":"PLANNER_RESPONSE","content":"answer content","thinking":"thought process"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastAssistantMessage, "answer content")
+        XCTAssertNil(result.delta.lastUserPrompt)
+    }
+
+    func testScanLinesExtractsAntigravityPlannerResponseWithOnlyThinking() {
+        let line = """
+        {"type":"PLANNER_RESPONSE","thinking":"thought process"}
+        """
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+        XCTAssertEqual(result.delta.lastAssistantMessage, "thought process")
+        XCTAssertNil(result.delta.lastUserPrompt)
+    }
+
+    func testScanLinesExtractsCodexTaskStartedAsProcessing() {
+        let line = #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1"}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertEqual(result.delta.turnStatus, .processing)
+        XCTAssertFalse(result.delta.isEmpty)
+    }
+
+    func testScanLinesExtractsCodexTerminalTurnEventsAsIdle() {
+        let lines = [
+            #"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}"#,
+            #"{"type":"event_msg","payload":{"type":"turn_aborted","reason":"interrupted"}}"#,
+            #"{"type":"event_msg","payload":{"type":"turn_failed","reason":"tool_error"}}"#
+        ].joined(separator: "\n")
+        let result = JSONLTailer.scanLines(Data((lines + "\n").utf8))
+
+        XCTAssertEqual(result.delta.turnStatus, .idle)
+        XCTAssertFalse(result.delta.isEmpty)
+    }
+
+    func testLatestTurnStatusUsesMostRecentCodexTurnEvent() {
+        let lines = [
+            #"{"type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1"}}"#,
+            #"{"type":"event_msg","payload":{"type":"task_started","turn_id":"turn-2"}}"#
+        ].joined(separator: "\n")
+
+        XCTAssertEqual(JSONLTailer.latestTurnStatus(in: Data((lines + "\n").utf8)), .processing)
+    }
+
+    func testScanLinesTreatsCodexEventMessagesAsActivity() {
+        let line = #"{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{}}}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertTrue(result.delta.hasActivity)
+        XCTAssertFalse(result.delta.isEmpty)
+    }
+
+    func testScanLinesExtractsCodexPublicAgentMessage() {
+        let line = #"{"type":"event_msg","payload":{"type":"agent_message","message":"Checking the affected call sites now."}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertEqual(result.delta.lastAssistantMessage, "Checking the affected call sites now.")
+        XCTAssertTrue(result.delta.hasActivity)
+    }
+
+    func testScanLinesExtractsCodexAssistantOutputText() {
+        let line = #"{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"The focused tests now pass."}]}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertEqual(result.delta.lastAssistantMessage, "The focused tests now pass.")
+        XCTAssertTrue(result.delta.hasActivity)
+    }
+
+    /// Shape copied from a real Codex 0.155 rollout: model output carries a
+    /// Responses API `id` between the payload `type` and `role`, plus trailing
+    /// `phase` / metadata keys. Paginated rollouts (the TUI/exec default) no
+    /// longer persist `event_msg` `agent_message`, so this record is the only
+    /// place public assistant text appears.
+    func testScanLinesExtractsCodexAssistantOutputTextWithResponseId() {
+        let line = #"{"timestamp":"2026-09-22T10:30:08.122Z","ordinal":12,"type":"response_item","payload":{"type":"message","id":"msg_06d3529cdc545225016ab258ae4a9487d0b31be86b7c8d5a90","role":"assistant","content":[{"type":"output_text","text":"Checking the parser first."}],"phase":"commentary","internal_chat_message_metadata_passthrough":{"turn_id":"t1"}}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertEqual(result.delta.lastAssistantMessage, "Checking the parser first.")
+        XCTAssertTrue(result.delta.hasActivity)
+    }
+
+    func testScanLinesIgnoresCodexUserAndDeveloperMessagesWithResponseId() {
+        let lines = [
+            #"{"type":"response_item","payload":{"type":"message","id":"msg_1","role":"developer","content":[{"type":"input_text","text":"<app-context>"}]}}"#,
+            #"{"type":"response_item","payload":{"type":"message","id":"msg_2","role":"user","content":[{"type":"input_text","text":"say \"role\":\"assistant\" and \"type\":\"output_text\""}]}}"#,
+        ].joined(separator: "\n")
+        let result = JSONLTailer.scanLines(Data((lines + "\n").utf8))
+
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesIgnoresPaginatedCodexReasoningItems() {
+        let line = #"{"type":"event_msg","payload":{"type":"item_completed","thread_id":"t","turn_id":"u","item":{"type":"Reasoning","id":"rs_1","summary_text":["private summary"],"raw_content":["private reasoning"]}}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesIgnoresCodexReasoningEvenWhenItHasASummary() {
+        let line = #"{"type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Reviewing transcript parsing"}],"content":[{"type":"text","text":"hidden chain of thought"}],"encrypted_content":"secret"}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertNil(result.delta.lastAssistantMessage)
+    }
+
+    func testScanLinesIgnoresCodexResponseItemAgentMessageWithMessageField() {
+        let line = #"{"type":"response_item","payload":{"type":"agent_message","message":"private delegation","author":"/root","recipient":"/root/worker"}}"#
+        let result = JSONLTailer.scanLines(Data((line + "\n").utf8))
+
+        XCTAssertNil(result.delta.lastAssistantMessage)
+        XCTAssertFalse(result.delta.hasActivity)
+    }
+
+    func testScanLinesIgnoresCodexPrivateReasoningAndInterAgentMessages() {
+        let lines = [
+            #"{"type":"response_item","payload":{"type":"reasoning","summary":[],"content":[{"type":"text","text":"hidden chain of thought"}],"encrypted_content":"secret"}}"#,
+            #"{"type":"response_item","payload":{"type":"agent_message","author":"/root","recipient":"/root/worker","content":[{"type":"input_text","text":"private delegation"}]}}"#
+        ].joined(separator: "\n")
+        let result = JSONLTailer.scanLines(Data((lines + "\n").utf8))
+
+        XCTAssertNil(result.delta.lastAssistantMessage)
+        XCTAssertFalse(result.delta.hasActivity)
+    }
+
+    func testScanLinesClearsPreviousCodexOutputAtNewTurnBoundary() {
+        let lines = [
+            #"{"type":"event_msg","payload":{"type":"agent_message","message":"Old answer"}}"#,
+            #"{"type":"event_msg","payload":{"type":"task_started"}}"#,
+            #"{"type":"event_msg","payload":{"type":"user_message","message":"New task"}}"#,
+        ].joined(separator: "\n")
+        let result = JSONLTailer.scanLines(Data((lines + "\n").utf8))
+
+        XCTAssertNil(result.delta.lastAssistantMessage)
+        XCTAssertEqual(result.delta.lastUserPrompt, "New task")
+        XCTAssertEqual(result.delta.turnStatus, .processing)
+    }
+
+    func testScanLinesExtractsGrokChatHistoryRows() {
+        let lines = [
+            #"{"type":"user","content":[{"type":"text","text":"build it"}]}"#,
+            #"{"type":"assistant","content":"done","model_id":"grok-code"}"#,
+        ].joined(separator: "\n") + "\n"
+
+        let result = JSONLTailer.scanLines(Data(lines.utf8))
+
+        XCTAssertEqual(result.delta.lastUserPrompt, "build it")
+        XCTAssertEqual(result.delta.lastAssistantMessage, "done")
+    }
+
+    // MARK: - extractText
+
+    func testExtractTextFromPlainString() {
+        XCTAssertEqual(JSONLTailer.extractText(from: "hi"), "hi")
+        XCTAssertEqual(JSONLTailer.extractText(from: "  hi  "), "hi")
+        XCTAssertNil(JSONLTailer.extractText(from: ""))
+        XCTAssertNil(JSONLTailer.extractText(from: "   "))
+    }
+
+    func testExtractTextFromMixedBlocks() {
+        let blocks: [[String: Any]] = [
+            ["type": "text", "text": "part one"],
+            ["type": "tool_use", "name": "Bash", "input": ["command": "ls"]],
+            ["type": "text", "text": "part two"]
+        ]
+        XCTAssertEqual(JSONLTailer.extractText(from: blocks), "part one\npart two")
+    }
+
+    func testExtractTextFromEmptyArrayReturnsNil() {
+        XCTAssertNil(JSONLTailer.extractText(from: [[String: Any]]()))
+    }
+
+    func testExtractTextFromUnknownShapeReturnsNil() {
+        XCTAssertNil(JSONLTailer.extractText(from: 42))
+        XCTAssertNil(JSONLTailer.extractText(from: nil))
+    }
+
+    // MARK: - Integration: tail a real file
+
+    func testAttachAndDetectAppendedLine() throws {
+        let url = temporaryFileURL()
+        try Data("".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let expectation = self.expectation(description: "delta delivered")
+        let captured = LockedValue<ConversationTailDelta?>(nil)
+
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                captured.set(delta)
+                expectation.fulfill()
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+
+        // Let the DispatchSource attach before appending.
+        Thread.sleep(forTimeInterval: 0.15)
+
+        let line = assistantLine(text: "ping") + "\n"
+        try appendToFile(url: url, content: line)
+
+        wait(for: [expectation], timeout: 2)
+
+        XCTAssertEqual(captured.value?.sessionId, "s1")
+        XCTAssertEqual(captured.value?.lastAssistantMessage, "ping")
+
+        tailer.detach(sessionId: "s1")
+    }
+
+    func testAttachIgnoresPreexistingContentByDefault() throws {
+        let url = temporaryFileURL()
+        let pre = assistantLine(text: "already written") + "\n"
+        try Data(pre.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let receivedDelta = self.expectation(description: "delta fires for new append only")
+
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                XCTAssertEqual(delta.lastAssistantMessage, "fresh")
+                receivedDelta.fulfill()
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        Thread.sleep(forTimeInterval: 0.15)
+        try appendToFile(url: url, content: assistantLine(text: "fresh") + "\n")
+
+        wait(for: [receivedDelta], timeout: 2)
+        tailer.detach(sessionId: "s1")
+    }
+
+    func testDetachStopsFurtherCallbacks() throws {
+        let url = temporaryFileURL()
+        try Data("".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let callCount = LockedValue(0)
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { _ in callCount.update { $0 += 1 } }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        Thread.sleep(forTimeInterval: 0.15)
+
+        try appendToFile(url: url, content: assistantLine(text: "first") + "\n")
+        // Give the dispatch source a moment to deliver.
+        Thread.sleep(forTimeInterval: 0.2)
+
+        tailer.detach(sessionId: "s1")
+        // Allow detach to flush.
+        Thread.sleep(forTimeInterval: 0.15)
+
+        try appendToFile(url: url, content: assistantLine(text: "ignored") + "\n")
+        Thread.sleep(forTimeInterval: 0.2)
+
+        XCTAssertEqual(callCount.value, 1)
+    }
+
+    func testDetachCancelsDelayedReattachAfterFileReplacement() throws {
+        let url = temporaryFileURL()
+        let backup = url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".old")
+        try Data("".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: backup)
+        }
+
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            replacementReattachDelay: .milliseconds(500),
+            onDelta: { _ in }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+
+        try FileManager.default.moveItem(at: url, to: backup)
+        try Data("".utf8).write(to: url)
+        // Wait for the rename handler to remove the old watch. The injected
+        // delay leaves a deterministic window before its reopen block runs.
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 0 })
+        tailer.detach(sessionId: "s1")
+        Thread.sleep(forTimeInterval: 0.6)
+
+        XCTAssertEqual(tailer.activeSessionCount, 0)
+    }
+
+    func testFileReplacementReattachesWhenSessionRemainsDesired() throws {
+        let url = temporaryFileURL()
+        let backup = url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".old")
+        try Data("".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: backup)
+        }
+
+        let replacementDelta = expectation(description: "replacement file delta delivered")
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            replacementReattachDelay: .milliseconds(200),
+            onDelta: { delta in
+                if delta.lastAssistantMessage == "after-rotate" {
+                    replacementDelta.fulfill()
+                }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+
+        try FileManager.default.moveItem(at: url, to: backup)
+        try Data("".utf8).write(to: url)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 0 })
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+        try appendToFile(url: url, content: assistantLine(text: "after-rotate") + "\n")
+
+        wait(for: [replacementDelta], timeout: 2)
+        XCTAssertEqual(tailer.activeSessionCount, 1)
+        tailer.detach(sessionId: "s1")
+    }
+
+    // MARK: - Integration: offset accounting across partial writes (#278)
+
+    /// A JSONL line flushed in two chunks (no newline in the first) must be
+    /// joined from the in-memory fragment + the second chunk exactly once.
+    /// The pre-fix code re-read the fragment's bytes from disk AND prepended
+    /// the stored fragment, corrupting the joined line so its delta was lost.
+    func testPartialLineSplitAcrossWritesDeliversJoinedMessage() throws {
+        let url = temporaryFileURL()
+        try Data("".utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let joined = self.expectation(description: "joined line delta delivered")
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                if delta.lastAssistantMessage == "split-reply" {
+                    joined.fulfill()
+                }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        Thread.sleep(forTimeInterval: 0.15)
+
+        let full = assistantLine(text: "split-reply") + "\n"
+        let cut = full.index(full.startIndex, offsetBy: full.count / 2)
+
+        // First chunk carries no newline — the tailer must stash it as a fragment.
+        try appendToFile(url: url, content: String(full[full.startIndex..<cut]))
+        // Let the dispatch source observe the partial write before completing the line.
+        Thread.sleep(forTimeInterval: 0.4)
+        try appendToFile(url: url, content: String(full[cut...]))
+
+        wait(for: [joined], timeout: 2)
+        tailer.detach(sessionId: "s1")
+    }
+
+    /// After a fragment episode the read offset must keep pointing inside the
+    /// file. The pre-fix code drifted the offset past EOF, so the next small
+    /// append looked like a truncation and re-scanned the whole file from 0 —
+    /// on overnight multi-MB transcripts that full rescan ran for nearly every
+    /// append, pinning one core (#278). The whole-file rescan is observable
+    /// here: it would resurface the pre-attach user prompt in the delta.
+    func testSmallAppendAfterFragmentDoesNotRescanWholeFile() throws {
+        let url = temporaryFileURL()
+        // Pre-existing content from before attach — must never re-surface.
+        try Data((userLine(text: "old-question") + "\n").utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let wrapDelta = self.expectation(description: "delta for final small append")
+        let captured = LockedValue<ConversationTailDelta?>(nil)
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                if delta.lastAssistantMessage == "wrap" {
+                    captured.set(delta)
+                    wrapDelta.fulfill()
+                }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        Thread.sleep(forTimeInterval: 0.15)
+
+        // Fragment episode: a long line flushed in two chunks. The first chunk
+        // is deliberately longer than the final "wrap" line so any offset drift
+        // (old fragment length) exceeds the size of the final append.
+        let full = assistantLine(text: String(repeating: "x", count: 200)) + "\n"
+        let cut = full.index(full.startIndex, offsetBy: full.count - 20)
+        try appendToFile(url: url, content: String(full[full.startIndex..<cut]))
+        Thread.sleep(forTimeInterval: 0.4)
+        try appendToFile(url: url, content: String(full[cut...]))
+        Thread.sleep(forTimeInterval: 0.4)
+
+        // Small append: with a drifted offset this used to trip the truncation
+        // check (size < offset) and re-read the file from byte 0.
+        try appendToFile(url: url, content: assistantLine(text: "wrap") + "\n")
+
+        wait(for: [wrapDelta], timeout: 2)
+        XCTAssertNil(
+            captured.value?.lastUserPrompt,
+            "pre-attach content resurfaced — tailer re-scanned the whole file from offset 0"
+        )
+        tailer.detach(sessionId: "s1")
+    }
+
+    /// Real truncation (size genuinely shrinks) must still rewind and pick up
+    /// the fresh content — guards the rewind path the offset fix keeps.
+    func testRealTruncationRewindsAndPicksUpFreshContent() throws {
+        let url = temporaryFileURL()
+        let pre = assistantLine(text: "long original content that will be truncated away") + "\n"
+        try Data(pre.utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let fresh = self.expectation(description: "delta after truncation")
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                if delta.lastAssistantMessage == "fresh-after-truncate" {
+                    fresh.fulfill()
+                }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        Thread.sleep(forTimeInterval: 0.15)
+
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: 0)
+        try handle.write(contentsOf: Data((assistantLine(text: "fresh-after-truncate") + "\n").utf8))
+        try handle.close()
+
+        wait(for: [fresh], timeout: 2)
+        tailer.detach(sessionId: "s1")
+    }
+
+    func testReplacedFileHistoryIsDeliveredOnceAsAReplayThenLiveAgain() throws {
+        let url = temporaryFileURL()
+        let backup = url.deletingLastPathComponent()
+            .appendingPathComponent(url.lastPathComponent + ".old")
+        try Data("".utf8).write(to: url)
+        defer {
+            try? FileManager.default.removeItem(at: url)
+            try? FileManager.default.removeItem(at: backup)
+        }
+
+        let replay = expectation(description: "history replayed")
+        let live = expectation(description: "next append is live")
+        let deltas = LockedValue<[ConversationTailDelta]>([])
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            replacementReattachDelay: .milliseconds(50),
+            onDelta: { delta in
+                deltas.update { $0.append(delta) }
+                if delta.lastAssistantMessage == "history" { replay.fulfill() }
+                if delta.lastAssistantMessage == "news" { live.fulfill() }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+
+        // Replaced by a file that already has history; no further write.
+        try FileManager.default.moveItem(at: url, to: backup)
+        try Data((assistantLine(text: "history") + "\n").utf8).write(to: url)
+        wait(for: [replay], timeout: 2)
+
+        try appendToFile(url: url, content: assistantLine(text: "news") + "\n")
+        wait(for: [live], timeout: 2)
+        tailer.detach(sessionId: "s1")
+
+        XCTAssertEqual(deltas.value.map(\.replaysWholeFile), [true, false])
+    }
+
+    // MARK: - Attach offset shared with the backfill
+
+    /// Lines written after the caller's backfill stopped but before the watch
+    /// was armed must be read at once — no later write may ever come (a
+    /// Codex turn that already ended).
+    func testAttachAtAnOffsetReadsWhatFollowsItWithoutWaitingForAWrite() throws {
+        let url = temporaryFileURL()
+        let seen = userLine(text: "already backfilled") + "\n"
+        let missed = assistantLine(text: "written in the gap") + "\n"
+        try Data((seen + missed).utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let delivered = expectation(description: "gap line delivered")
+        let captured = LockedValue<ConversationTailDelta?>(nil)
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                captured.set(delta)
+                delivered.fulfill()
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path, initialOffset: UInt64(seen.utf8.count))
+
+        wait(for: [delivered], timeout: 2)
+        XCTAssertEqual(captured.value?.lastAssistantMessage, "written in the gap")
+        XCTAssertNil(captured.value?.lastUserPrompt, "bytes before the offset belong to the backfill")
+        tailer.detach(sessionId: "s1")
+    }
+
+    func testAttachAtAnOffsetCompletesARowThatWasStillBeingWritten() throws {
+        let url = temporaryFileURL()
+        let full = assistantLine(text: "finished later") + "\n"
+        let cut = full.index(full.startIndex, offsetBy: full.count / 2)
+        let head = userLine(text: "q") + "\n"
+        try Data((head + String(full[..<cut])).utf8).write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        let scan = try XCTUnwrap(JSONLTailer.scanTailForAttach(path: url.path))
+        XCTAssertEqual(scan.endOffset, UInt64(head.utf8.count), "the tailer starts at the row being written")
+        XCTAssertEqual(scan.delta.lastUserPrompt, "q")
+        XCTAssertNil(scan.delta.lastAssistantMessage)
+
+        let delivered = expectation(description: "completed row delivered")
+        let tailer = JSONLTailer(
+            queue: DispatchQueue(label: "tailer-test"),
+            onDelta: { delta in
+                if delta.lastAssistantMessage == "finished later" { delivered.fulfill() }
+            }
+        )
+        tailer.attach(sessionId: "s1", filePath: url.path, initialOffset: scan.endOffset)
+        XCTAssertTrue(waitUntil { tailer.activeSessionCount == 1 })
+        try appendToFile(url: url, content: String(full[cut...]))
+
+        wait(for: [delivered], timeout: 2)
+        tailer.detach(sessionId: "s1")
+    }
+
+    func testScanTailForAttachSkipsTheCutFirstRowAndReadsAnUnterminatedLastRow() throws {
+        let url = temporaryFileURL()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let early = userLine(text: String(repeating: "e", count: 400)) + "\n"
+        let prompt = userLine(text: "in window") + "\n"
+        // Cursor never ends its last row with a newline.
+        let last = #"{"role":"assistant","message":{"content":[{"type":"text","text":"cursor reply"}]}}"#
+        try Data((early + prompt + last).utf8).write(to: url)
+
+        let scan = try XCTUnwrap(JSONLTailer.scanTailForAttach(path: url.path, maxBytes: prompt.utf8.count + last.utf8.count + 10))
+        XCTAssertEqual(scan.delta.lastUserPrompt, "in window", "the cut first row is dropped, not misparsed")
+        XCTAssertEqual(scan.delta.lastAssistantMessage, "cursor reply")
+        XCTAssertEqual(scan.endOffset, UInt64(early.utf8.count + prompt.utf8.count))
+
+        // A window that starts exactly on a row boundary keeps that row.
+        let exact = try XCTUnwrap(JSONLTailer.scanTailForAttach(path: url.path, maxBytes: prompt.utf8.count + last.utf8.count))
+        XCTAssertEqual(exact.delta.lastUserPrompt, "in window")
+    }
+
+    // MARK: - Fixtures
+
+    private func assistantLine(text: String) -> String {
+        let payload: [String: Any] = [
+            "type": "assistant",
+            "message": [
+                "content": [
+                    ["type": "text", "text": text]
+                ]
+            ]
+        ]
+        return jsonString(payload)
+    }
+
+    private func userLine(text: String) -> String {
+        let payload: [String: Any] = [
+            "type": "user",
+            "message": [
+                "content": text
+            ]
+        ]
+        return jsonString(payload)
+    }
+
+    private func jsonString(_ obj: [String: Any]) -> String {
+        let data = try! JSONSerialization.data(withJSONObject: obj)
+        return String(data: data, encoding: .utf8)!
+    }
+
+    private func temporaryFileURL() -> URL {
+        let name = "jsonl-tailer-\(UUID().uuidString).jsonl"
+        return URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+    }
+
+    private func appendToFile(url: URL, content: String) throws {
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.seekToEnd()
+        try handle.write(contentsOf: Data(content.utf8))
+        try handle.close()
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        pollInterval: TimeInterval = 0.005,
+        _ predicate: () -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if predicate() { return true }
+            Thread.sleep(forTimeInterval: pollInterval)
+        } while Date() < deadline
+        return predicate()
+    }
+}
+
+private final class LockedValue<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: Value
+
+    init(_ value: Value) {
+        self.storage = value
+    }
+
+    var value: Value {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func set(_ value: Value) {
+        lock.lock()
+        storage = value
+        lock.unlock()
+    }
+
+    func update(_ body: (inout Value) -> Void) {
+        lock.lock()
+        body(&storage)
+        lock.unlock()
+    }
+}

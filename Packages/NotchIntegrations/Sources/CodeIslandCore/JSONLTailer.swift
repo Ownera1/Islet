@@ -1,0 +1,1079 @@
+import Foundation
+import Darwin
+
+public enum ConversationTurnStatus: Equatable, Sendable {
+    case processing
+    case idle
+}
+
+/// Trailing-question state derived from a Cursor `role`-keyed transcript.
+///
+/// Cursor's AskQuestion tool has no hook channel — the question is asked and
+/// answered entirely inside Cursor's own UI (issue #265). The only observable
+/// signal is the transcript: the asking assistant entry ends the file until the
+/// user answers, at which point newer entries are appended. `pending` therefore
+/// means "the newest entry contains an unanswered question tool call" and
+/// `cleared` means "a newer entry superseded any earlier question".
+public enum CursorQuestionSignal: Equatable, Sendable {
+    /// The newest transcript entry asks a question that has not been answered.
+    /// `prompt` is the extracted question text; empty when the tool call was
+    /// recognized but its arguments carried no extractable text.
+    case pending(prompt: String)
+    /// A newer user/assistant entry exists, so no question is pending.
+    case cleared
+}
+
+/// A delta emitted by `JSONLTailer` whenever the watched transcript grows.
+public struct ConversationTailDelta: Equatable, Sendable {
+    public let sessionId: String
+    public let lastUserPrompt: String?
+    public let lastAssistantMessage: String?
+    public let turnStatus: ConversationTurnStatus?
+    public let hasActivity: Bool
+    public let cursorQuestion: CursorQuestionSignal?
+    /// Identifies the exact tailer attachment that produced this delta.
+    ///
+    /// AppState uses this to reject a callback that crossed an actor hop after
+    /// the session was detached and re-created with the same provider id.
+    /// Optional for source compatibility with synthetic/test deltas.
+    public let attachmentToken: UUID?
+    /// File path paired with `attachmentToken`; an additional guard against
+    /// applying a delta after the session switched rollout files.
+    public let filePath: String?
+    /// Checklist events (TaskCreate/TodoWrite/update_plan rows, new prompts)
+    /// in transcript order. See `AgentTaskTranscript`.
+    public let taskEvents: [AgentTaskEvent]
+    // Session metadata (recap + model label).
+    /// Newest `away_summary` recap that no later user prompt in the chunk superseded.
+    public let sessionRecap: SessionRecap?
+    /// Model / reasoning effort of the newest main-thread turn in the chunk.
+    public let modelObservation: ModelObservation?
+    /// The file was replaced and this chunk re-reads it from the start: it is
+    /// the new file's history, not things that just happened.
+    public let replaysWholeFile: Bool
+    /// A `/model` switch in the chunk turned the 1M context variant on or off.
+    public let configuredLongContext: Bool?
+
+    public init(
+        sessionId: String,
+        lastUserPrompt: String?,
+        lastAssistantMessage: String?,
+        turnStatus: ConversationTurnStatus? = nil,
+        hasActivity: Bool = false,
+        cursorQuestion: CursorQuestionSignal? = nil,
+        attachmentToken: UUID? = nil,
+        filePath: String? = nil,
+        taskEvents: [AgentTaskEvent] = [],
+        sessionRecap: SessionRecap? = nil,
+        modelObservation: ModelObservation? = nil,
+        replaysWholeFile: Bool = false,
+        configuredLongContext: Bool? = nil
+    ) {
+        self.sessionId = sessionId
+        self.lastUserPrompt = lastUserPrompt
+        self.lastAssistantMessage = lastAssistantMessage
+        self.turnStatus = turnStatus
+        self.hasActivity = hasActivity
+        self.cursorQuestion = cursorQuestion
+        self.attachmentToken = attachmentToken
+        self.filePath = filePath
+        self.taskEvents = taskEvents
+        self.sessionRecap = sessionRecap
+        self.modelObservation = modelObservation
+        self.replaysWholeFile = replaysWholeFile
+        self.configuredLongContext = configuredLongContext
+    }
+
+    /// A delta only carries signal when at least one field is non-nil.
+    public var isEmpty: Bool {
+        lastUserPrompt == nil && lastAssistantMessage == nil && turnStatus == nil
+            && !hasActivity && cursorQuestion == nil
+            && taskEvents.isEmpty
+            && sessionRecap == nil && modelObservation == nil
+            && configuredLongContext == nil
+    }
+}
+
+/// Watches one or more Claude-style JSONL transcripts and streams incremental
+/// `ConversationTailDelta` events as new lines are appended.
+///
+/// The tailer attaches at end-of-file so it complements — rather than duplicates —
+/// whatever initial backfill the caller already performed via filesystem scanning.
+/// When the file's inode changes (e.g. user ran `/clear` or a new session rotated
+/// on top of the same path) the watch transparently re-opens from the new file.
+///
+/// This type is thread-safe. All DispatchSource callbacks run on the tailer's
+/// internal queue; the user-supplied `onDelta` closure is invoked there too and
+/// must forward to the appropriate actor if it mutates shared state.
+public final class JSONLTailer: @unchecked Sendable {
+    public typealias DeltaHandler = @Sendable (ConversationTailDelta) -> Void
+
+    private final class Watch {
+        let sessionId: String
+        var filePath: String
+        var fd: Int32
+        var offset: off_t
+        var inode: ino_t
+        var pendingFragment: Data
+        var source: DispatchSourceFileSystemObject
+        let generation: UInt64
+        let attachmentToken: UUID
+        /// The next read re-reads a replaced file from its start.
+        var replayPending: Bool
+
+        init(
+            sessionId: String,
+            filePath: String,
+            fd: Int32,
+            offset: off_t,
+            inode: ino_t,
+            source: DispatchSourceFileSystemObject,
+            generation: UInt64,
+            attachmentToken: UUID,
+            replayPending: Bool
+        ) {
+            self.sessionId = sessionId
+            self.filePath = filePath
+            self.fd = fd
+            self.offset = offset
+            self.inode = inode
+            self.pendingFragment = Data()
+            self.source = source
+            self.generation = generation
+            self.attachmentToken = attachmentToken
+            self.replayPending = replayPending
+        }
+    }
+
+    private let queue: DispatchQueue
+    private let onDelta: DeltaHandler
+    private let replacementReattachDelay: DispatchTimeInterval
+    private var watches: [String: Watch] = [:]
+    private var desiredFilePaths: [String: String] = [:]
+    private var generations: [String: UInt64] = [:]
+
+    public init(
+        queue: DispatchQueue = DispatchQueue(label: "com.codeisland.jsonl-tailer"),
+        replacementReattachDelay: DispatchTimeInterval = .milliseconds(50),
+        onDelta: @escaping DeltaHandler
+    ) {
+        self.queue = queue
+        self.replacementReattachDelay = replacementReattachDelay
+        self.onDelta = onDelta
+    }
+
+    deinit {
+        for watch in watches.values {
+            watch.source.cancel()
+        }
+    }
+
+    // MARK: - Public API
+
+    /// Start tailing `filePath`.
+    ///
+    /// - Parameter initialOffset: where the caller's own backfill stopped
+    ///   (``scanTailForAttach(path:maxBytes:)``'s `endOffset`). Lines from
+    ///   there on are delivered — including any appended before the watch was
+    ///   armed, read right away rather than on the next write. nil starts at
+    ///   the end of the file as it is when the watch opens it.
+    @discardableResult
+    public func attach(sessionId: String, filePath: String, initialOffset: UInt64? = nil) -> UUID {
+        let attachmentToken = UUID()
+        queue.async { [weak self] in
+            guard let self else { return }
+            let generation = self.advanceGenerationOnQueue(sessionId: sessionId)
+            self.desiredFilePaths[sessionId] = filePath
+            self.detachOnQueue(sessionId: sessionId)
+            self.attachOnQueue(
+                sessionId: sessionId,
+                filePath: filePath,
+                initialOffset: initialOffset.map { off_t(clamping: $0) },
+                readPendingBytes: initialOffset != nil,
+                generation: generation,
+                attachmentToken: attachmentToken
+            )
+        }
+        return attachmentToken
+    }
+
+    public func detach(sessionId: String) {
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.desiredFilePaths.removeValue(forKey: sessionId)
+            _ = self.advanceGenerationOnQueue(sessionId: sessionId)
+            self.detachOnQueue(sessionId: sessionId)
+        }
+    }
+
+    public func detachAll() {
+        queue.async { [weak self] in
+            guard let self else { return }
+            let sessionIds = Set(self.watches.keys).union(self.desiredFilePaths.keys)
+            self.desiredFilePaths.removeAll()
+            for key in sessionIds {
+                _ = self.advanceGenerationOnQueue(sessionId: key)
+                self.detachOnQueue(sessionId: key)
+            }
+        }
+    }
+
+    public var activeSessionCount: Int {
+        queue.sync { watches.count }
+    }
+
+    // MARK: - Watch lifecycle
+
+    private func advanceGenerationOnQueue(sessionId: String) -> UInt64 {
+        let generation = (generations[sessionId] ?? 0) &+ 1
+        generations[sessionId] = generation
+        return generation
+    }
+
+    private func attachOnQueue(
+        sessionId: String,
+        filePath: String,
+        initialOffset: off_t?,
+        readPendingBytes: Bool = false,
+        replacesFile: Bool = false,
+        generation: UInt64,
+        attachmentToken: UUID
+    ) {
+        guard desiredFilePaths[sessionId] == filePath,
+              generations[sessionId] == generation else {
+            return
+        }
+        let fd = open(filePath, O_RDONLY | O_NONBLOCK)
+        guard fd >= 0 else { return }
+        var fileStat = stat()
+        guard fstat(fd, &fileStat) == 0 else {
+            close(fd)
+            return
+        }
+
+        let offset = initialOffset ?? fileStat.st_size
+        let source = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.extend, .write, .delete, .rename, .revoke],
+            queue: queue
+        )
+        let watch = Watch(
+            sessionId: sessionId,
+            filePath: filePath,
+            fd: fd,
+            offset: offset,
+            inode: fileStat.st_ino,
+            source: source,
+            generation: generation,
+            attachmentToken: attachmentToken,
+            // An empty replacement has no history; what it gets next is news.
+            replayPending: replacesFile && fileStat.st_size > offset
+        )
+
+        source.setEventHandler { [weak self] in
+            guard let self else { return }
+            let events = source.data
+            self.handleEvents(events, watch: watch)
+        }
+        source.setCancelHandler {
+            close(fd)
+        }
+
+        watches[sessionId] = watch
+        source.resume()
+        // Bytes written after the caller's backfill stopped but before the
+        // source was armed raise no event of their own; don't leave them
+        // waiting for the next write (a finished turn may never write again).
+        // A replaced file's history is read now too, as its own replay chunk,
+        // so the next write arrives as live news.
+        if readPendingBytes || replacesFile, fileStat.st_size > offset {
+            handleEvents([], watch: watch)
+        }
+    }
+
+    private func detachOnQueue(sessionId: String) {
+        guard let watch = watches.removeValue(forKey: sessionId) else { return }
+        watch.source.cancel()
+    }
+
+    // MARK: - Event handling
+
+    private func handleEvents(_ events: DispatchSource.FileSystemEvent, watch: Watch) {
+        guard watches[watch.sessionId] === watch,
+              desiredFilePaths[watch.sessionId] == watch.filePath,
+              generations[watch.sessionId] == watch.generation else {
+            return
+        }
+
+        // A rotate or delete means the file has been replaced underneath us (e.g. /clear).
+        // Re-attach from a fresh fd so future writes reach our handler.
+        if events.contains(.delete) || events.contains(.rename) || events.contains(.revoke) {
+            let path = watch.filePath
+            let sid = watch.sessionId
+            detachOnQueue(sessionId: sid)
+            // Give the writer a moment to finish writing the new file before we reopen.
+            queue.asyncAfter(deadline: .now() + replacementReattachDelay) { [weak self] in
+                self?.attachOnQueue(
+                    sessionId: sid,
+                    filePath: path,
+                    initialOffset: 0,
+                    replacesFile: true,
+                    generation: watch.generation,
+                    attachmentToken: watch.attachmentToken
+                )
+            }
+            return
+        }
+
+        var fileStat = stat()
+        if stat(watch.filePath, &fileStat) == 0 {
+            if fileStat.st_ino != watch.inode {
+                // Inode swap without a delete/rename event — reopen from scratch.
+                let path = watch.filePath
+                let sid = watch.sessionId
+                detachOnQueue(sessionId: sid)
+                attachOnQueue(
+                    sessionId: sid,
+                    filePath: path,
+                    initialOffset: 0,
+                    replacesFile: true,
+                    generation: watch.generation,
+                    attachmentToken: watch.attachmentToken
+                )
+                return
+            }
+            if fileStat.st_size < watch.offset {
+                // Truncation — rewind so we don't miss the new prefix.
+                watch.offset = 0
+                watch.pendingFragment.removeAll(keepingCapacity: true)
+            }
+        }
+
+        guard let appended = readFromOffset(watch: watch) else { return }
+        let replaysWholeFile = watch.replayPending
+        watch.replayPending = false
+        let combined = watch.pendingFragment + appended
+
+        let scan = JSONLTailer.scanLines(combined)
+        watch.pendingFragment = scan.trailingFragment
+        // Advance by the bytes actually read from disk — the trailing fragment is
+        // carried purely in memory and its file bytes are already consumed here.
+        // Mixing the fragment into the offset math (the previous
+        // `combined.count - trailingFragment.count`) drifted the offset past EOF
+        // after every fragment episode; the next small append then looked like a
+        // truncation and re-scanned the whole file from byte 0 on each event,
+        // pinning a core on overnight-grown transcripts (#278).
+        watch.offset += off_t(appended.count)
+
+        if !scan.delta.isEmpty {
+            let delta = ConversationTailDelta(
+                sessionId: watch.sessionId,
+                lastUserPrompt: scan.delta.lastUserPrompt,
+                lastAssistantMessage: scan.delta.lastAssistantMessage,
+                turnStatus: scan.delta.turnStatus,
+                hasActivity: scan.delta.hasActivity,
+                cursorQuestion: scan.delta.cursorQuestion,
+                attachmentToken: watch.attachmentToken,
+                filePath: watch.filePath,
+                taskEvents: scan.delta.taskEvents,
+                sessionRecap: scan.delta.sessionRecap,
+                modelObservation: scan.delta.modelObservation,
+                replaysWholeFile: replaysWholeFile,
+                configuredLongContext: scan.delta.configuredLongContext
+            )
+            onDelta(delta)
+        }
+    }
+
+    private func readFromOffset(watch: Watch) -> Data? {
+        guard lseek(watch.fd, watch.offset, SEEK_SET) >= 0 else { return nil }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 16 * 1024)
+        while true {
+            let n = buffer.withUnsafeMutableBufferPointer { ptr in
+                read(watch.fd, ptr.baseAddress, ptr.count)
+            }
+            if n > 0 {
+                data.append(buffer, count: n)
+            } else if n == 0 {
+                break
+            } else {
+                if errno == EINTR { continue }
+                if errno == EAGAIN || errno == EWOULDBLOCK { break }
+                return nil
+            }
+        }
+        return data
+    }
+
+    // MARK: - Pure parsing (exposed for tests)
+
+    public struct ScanResult: Equatable {
+        public struct Delta: Equatable {
+            public var lastUserPrompt: String? {
+                // Lines are applied in file order, so a prompt seen after a
+                // recap in the same chunk means the recap is already stale.
+                didSet { if lastUserPrompt != nil { sessionRecap = nil } }
+            }
+            public var lastAssistantMessage: String?
+            public var turnStatus: ConversationTurnStatus?
+            public var hasActivity = false
+            public var cursorQuestion: CursorQuestionSignal?
+            public var taskEvents: [AgentTaskEvent] = []
+            // Session metadata (recap + model label).
+            public var sessionRecap: SessionRecap?
+            public var modelObservation: ModelObservation?
+            /// A `/model` switch's word on the 1M context variant.
+            public var configuredLongContext: Bool?
+            public var isEmpty: Bool {
+                lastUserPrompt == nil && lastAssistantMessage == nil && turnStatus == nil
+                    && !hasActivity && cursorQuestion == nil
+                    && taskEvents.isEmpty
+                    && sessionRecap == nil && modelObservation == nil
+                    && configuredLongContext == nil
+            }
+        }
+        public let delta: Delta
+        public let trailingFragment: Data
+    }
+
+    /// Split the given byte blob on newline boundaries and surface the latest user /
+    /// assistant text observed. Bytes after the final newline are returned as a
+    /// fragment that the caller should prepend on the next call.
+    public static func scanLines(_ data: Data) -> ScanResult {
+        var delta = ScanResult.Delta()
+        var lineStart = data.startIndex
+        var cursor = data.startIndex
+        let newline: UInt8 = 0x0A
+
+        while cursor < data.endIndex {
+            if data[cursor] == newline {
+                let line = data[lineStart..<cursor]
+                if !line.isEmpty {
+                    apply(line: line, into: &delta)
+                }
+                lineStart = data.index(after: cursor)
+            }
+            cursor = data.index(after: cursor)
+        }
+
+        let fragment = Data(data[lineStart..<data.endIndex])
+        return ScanResult(delta: delta, trailingFragment: fragment)
+    }
+
+    /// Return the most recent Codex turn state in a transcript blob.
+    public static func latestTurnStatus(in data: Data) -> ConversationTurnStatus? {
+        scanLines(data).delta.turnStatus
+    }
+
+    /// Return the trailing Cursor question state in a transcript blob, or nil
+    /// when the blob contained no role-keyed user/assistant entries at all.
+    public static func latestCursorQuestion(in data: Data) -> CursorQuestionSignal? {
+        scanLines(data).delta.cursorQuestion
+    }
+
+    /// Scan the last `maxBytes` of a transcript with the same rules as the live
+    /// tail, for attach-time backfill of recap / model state. The first line of
+    /// the window is usually cut mid-way; it fails to parse and is skipped.
+    /// nil when the file can't be read.
+    public static func scanFileTail(path: String, maxBytes: Int = 128 * 1024) -> ScanResult.Delta? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
+        guard (try? handle.seek(toOffset: start)) != nil,
+              var data = try? handle.readToEnd() else { return nil }
+        // The last line may still be mid-write; a newline makes the scan treat
+        // it as complete, and an incomplete one simply fails to parse.
+        data.append(0x0A)
+        return scanLines(data).delta
+    }
+
+    /// An attach-time scan of a transcript's tail, plus where it stopped.
+    public struct AttachScan: Equatable {
+        public let delta: ScanResult.Delta
+        /// Just past the last complete line when the scan ran. Hand it to
+        /// ``attach(sessionId:filePath:initialOffset:)`` (and to any other
+        /// backfill) so every line is read exactly once: a line still being
+        /// written, or appended after the scan, belongs to the live tail.
+        public let endOffset: UInt64
+    }
+
+    /// Scan the last `maxBytes` of a transcript — the attach-time backfill of
+    /// recap / model state, by the same rules as the live tail. nil when the
+    /// file can't be read.
+    public static func scanTailForAttach(path: String, maxBytes: Int = 128 * 1024) -> AttachScan? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        guard let size = try? handle.seekToEnd() else { return nil }
+        // One byte before the window says whether it starts on a line boundary.
+        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) - 1 : 0
+        guard (try? handle.seek(toOffset: start)) != nil,
+              let data = try? handle.read(upToCount: Int(size - start)) ?? Data() else { return nil }
+
+        var firstLine = data.startIndex
+        if start > 0 {
+            // The window's first line is cut unless the byte before it ended
+            // one. No newline at all: the window sits inside one huge row (a
+            // tool result) — nothing to scan, and the tailer starts at the end.
+            guard let boundary = data.firstIndex(of: 0x0A) else {
+                return AttachScan(delta: ScanResult.Delta(), endOffset: size)
+            }
+            firstLine = data.index(after: boundary)
+        }
+        // The tailer starts after the last newline. The unterminated rest is
+        // either a row still being written (it fails to parse here, and the
+        // tailer completes it) or a writer that never ends its last row with a
+        // newline (Cursor), whose row is parsed now and again once terminated —
+        // harmless for the idempotent recap / model / prompt fields.
+        let endOffset = data.lastIndex(of: 0x0A).map {
+            start + UInt64(data.distance(from: data.startIndex, to: $0) + 1)
+        } ?? start
+        var window = Data(data[firstLine...])
+        window.append(0x0A)
+        return AttachScan(delta: scanLines(window).delta, endOffset: endOffset)
+    }
+
+    private static func apply(line: Data.SubSequence, into delta: inout ScanResult.Delta) {
+        // Materialize the slice once so the byte probe and the JSON parser share a
+        // single allocation. Going through `Data(line)` also sidesteps a Foundation
+        // quirk where `Data.SubSequence.withUnsafeBytes` occasionally surfaces the
+        // parent's full buffer rather than the slice's view.
+        let lineData = Data(line)
+
+        // Fast path: realistic Claude transcripts are ~75% tool_use / tool_result /
+        // meta rows we don't care about. Skipping the JSON parse for those saves a
+        // measurable chunk of CPU per byte during streaming bursts.
+        let kind = quickTypeProbe(lineBytes: lineData)
+        guard kind != .irrelevant else { return }
+
+        guard let json = try? JSONSerialization.jsonObject(with: lineData) as? [String: Any] else { return }
+        if json["isMeta"] as? Bool == true { return }
+
+        // Checklist progress rides on rows this scanner already decodes
+        // (Claude user/assistant, Codex event_msg + update_plan calls), so it
+        // costs no extra JSON parse on the streaming path.
+        delta.taskEvents.append(contentsOf: AgentTaskTranscript.events(fromLine: json))
+
+        // Re-verify the type after a real parse — the byte probe can be fooled by
+        // nested content that happens to contain the literal `"type":"assistant"`.
+        let type = json["type"] as? String
+        let message = (json["message"] as? [String: Any]) ?? json
+
+        switch type {
+        case "user", "USER_INPUT":
+            if let text = extractText(from: message["content"]) {
+                switch claudeCommandEcho(text) {
+                case .local?:
+                    // /model, /effort, /clear…: no turn, so no new prompt —
+                    // and no reason to drop the recap. /model's output is the
+                    // only record of a switch to or from the 1M variant; a
+                    // model seen earlier in the chunk predates it.
+                    if let longContext = ModelLabel.longContextSwitch(inCommandOutput: text) {
+                        delta.configuredLongContext = longContext
+                        delta.modelObservation = nil
+                    }
+                case .prompt(let command)?:
+                    delta.lastUserPrompt = command
+                case nil:
+                    delta.lastUserPrompt = text
+                }
+            }
+        case "assistant", "PLANNER_RESPONSE":
+            if let text = extractText(from: message["content"]) {
+                delta.lastAssistantMessage = text
+            } else if let thinking = message["thinking"] as? String {
+                let trimmed = thinking.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    delta.lastAssistantMessage = trimmed
+                }
+            }
+            // Claude: `message.model` + top-level effort. Sidechain lines are a
+            // subagent's turns (older CLIs inlined them in the parent file) and
+            // must not relabel the parent with the subagent's model.
+            if json["isSidechain"] as? Bool != true,
+               let observation = ModelObservation.from(
+                   model: message["model"],
+                   effort: (json["perTurnEffort"] as? String) ?? (json["effort"] as? String),
+                   timestamp: json["timestamp"]
+               ) {
+                delta.modelObservation = observation
+            }
+        case "system":
+            // Claude Code's idle recap; other system subtypes carry nothing we show.
+            if let recap = SessionRecap.from(transcriptLine: json) {
+                delta.sessionRecap = recap
+            }
+        case "turn_context":
+            // Codex writes the turn's model and effort once per turn.
+            if let observation = ModelObservation.fromCodexTurnContext(json) {
+                delta.modelObservation = observation
+            }
+        case "event_msg":
+            delta.hasActivity = true
+            guard let payload = json["payload"] as? [String: Any],
+                  let eventType = payload["type"] as? String else { return }
+            if let text = codexPublicAssistantText(from: json) {
+                delta.lastAssistantMessage = text
+            }
+            switch eventType {
+            case "task_started":
+                delta.lastAssistantMessage = nil
+                delta.turnStatus = .processing
+            case "user_message":
+                delta.lastAssistantMessage = nil
+                if let message = normalizedText(payload["message"]) {
+                    delta.lastUserPrompt = message
+                }
+            // "turn_failed" is not in today's codex EventMsg enum — kept as a
+            // forward-compatible guess at the obvious name for a failed turn.
+            case "task_complete", "turn_aborted", "turn_failed":
+                delta.turnStatus = .idle
+            default:
+                break
+            }
+        case "response_item":
+            delta.hasActivity = true
+            if let text = codexPublicAssistantText(from: json) {
+                delta.lastAssistantMessage = text
+            }
+        default:
+            // Cursor agent transcripts key their entries on a top-level `role`
+            // instead of `type`: `{"role":"user","message":{"content":[...]}}`.
+            // Restrict the branch to lines with no `type` at all so type-keyed
+            // formats (Claude, CodeBuddy `"type":"message"`, …) never route here.
+            if type == nil, let role = json["role"] as? String {
+                applyCursorRoleLine(role: role, message: message, into: &delta)
+            }
+        }
+    }
+
+    /// How Claude Code records a slash command typed in the terminal.
+    public enum ClaudeCommandEcho: Equatable {
+        /// A built-in the CLI handles itself (/model, /effort, /clear,
+        /// /compact) or that command's output. Written as a plain user row
+        /// (`isMeta: false`), but it starts no turn and is not a prompt.
+        case local
+        /// A prompt command (skill, custom command) that does start a turn,
+        /// as the user typed it: "/design tidy the layout".
+        case prompt(String)
+    }
+
+    /// Classify a user row's text as a slash-command echo, or nil for an
+    /// ordinary prompt. Built-ins lead with `<command-name>` and are followed
+    /// by `<local-command-stdout>`; prompt commands lead with
+    /// `<command-message>` and are followed by their expanded prompt (an
+    /// `isMeta` row).
+    public static func claudeCommandEcho(_ text: String) -> ClaudeCommandEcho? {
+        let trimmed = text.drop { $0.isWhitespace }
+        guard trimmed.first == "<" else { return nil }
+        for tag in localCommandTags where trimmed.hasPrefix(tag) {
+            return .local
+        }
+        guard trimmed.hasPrefix("<command-message>"),
+              var name = taggedValue("command-name", in: trimmed), !name.isEmpty else { return nil }
+        if !name.hasPrefix("/") { name = "/" + name }
+        let args = taggedValue("command-args", in: trimmed) ?? ""
+        return .prompt(args.isEmpty ? name : "\(name) \(args)")
+    }
+
+    private static let localCommandTags = [
+        "<command-name>", "<local-command-stdout>", "<local-command-stderr>", "<local-command-caveat>",
+    ]
+
+    private static func taggedValue(_ tag: String, in text: Substring) -> String? {
+        guard let open = text.range(of: "<\(tag)>"),
+              let close = text.range(of: "</\(tag)>", range: open.upperBound..<text.endIndex) else { return nil }
+        return text[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Extract assistant text that Codex deliberately persists for display.
+    ///
+    /// Raw/encrypted reasoning content and every response-item `agent_message`
+    /// are intentionally excluded because the latter may be inter-agent traffic.
+    public static func codexPublicAssistantText(from json: [String: Any]) -> String? {
+        guard let type = json["type"] as? String,
+              let payload = json["payload"] as? [String: Any],
+              let payloadType = payload["type"] as? String else { return nil }
+
+        if type == "event_msg", payloadType == "agent_message" {
+            return normalizedText(payload["message"])
+        }
+
+        guard type == "response_item" else { return nil }
+        if payloadType == "message", payload["role"] as? String == "assistant" {
+            return codexTextBlocks(payload["content"], acceptedTypes: ["output_text"])
+        }
+        return nil
+    }
+
+    private static func codexTextBlocks(_ value: Any?, acceptedTypes: Set<String>) -> String? {
+        guard let blocks = value as? [[String: Any]] else { return nil }
+        let parts = blocks.compactMap { block -> String? in
+            guard let type = block["type"] as? String,
+                  acceptedTypes.contains(type) else { return nil }
+            return normalizedText(block["text"])
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+
+    private static func normalizedText(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Handle one Cursor `role`-keyed transcript entry.
+    ///
+    /// Updates trailing-question state and normalized chat text. Chat text is
+    /// stripped of `<timestamp>` / `<user_query>` wrappers so it can refresh the
+    /// island when hooks miss or are folded as subagent events (#merge staleness).
+    private static func applyCursorRoleLine(
+        role: String,
+        message: [String: Any],
+        into delta: inout ScanResult.Delta
+    ) {
+        switch role {
+        case "user":
+            delta.cursorQuestion = .cleared
+            if let text = normalizedCursorChatText(from: message["content"]) {
+                delta.lastUserPrompt = text
+            }
+        case "assistant":
+            if let prompt = cursorQuestionPrompt(inContent: message["content"]) {
+                delta.cursorQuestion = .pending(prompt: prompt)
+            } else {
+                delta.cursorQuestion = .cleared
+            }
+            if let text = normalizedCursorChatText(from: message["content"]) {
+                delta.lastAssistantMessage = text
+            }
+        default:
+            break
+        }
+    }
+
+    /// Strip Cursor transcript wrappers so hook and transcript copies can dedupe.
+    public static func normalizedCursorChatText(from content: Any?) -> String? {
+        guard var text = extractText(from: content) else { return nil }
+        while let start = text.range(of: "<timestamp>"),
+              let end = text.range(of: "</timestamp>", range: start.upperBound..<text.endIndex) {
+            text.removeSubrange(start.lowerBound..<end.upperBound)
+        }
+        if let start = text.range(of: "<user_query>"),
+           let end = text.range(of: "</user_query>", range: start.upperBound..<text.endIndex) {
+            text = String(text[start.upperBound..<end.lowerBound])
+        }
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    /// Extract the question text when a Cursor assistant `content` array carries a
+    /// blocking question tool call. Returns nil when the entry asks no question
+    /// (including `run_async` questions, which don't block the agent). An empty
+    /// string means "a question is pending but its text could not be extracted".
+    static func cursorQuestionPrompt(inContent content: Any?) -> String? {
+        guard let blocks = content as? [[String: Any]] else { return nil }
+        for block in blocks {
+            guard (block["type"] as? String) == "tool_use",
+                  let name = block["name"] as? String,
+                  isCursorQuestionToolName(name) else { continue }
+            let input = block["input"] as? [String: Any]
+            // Async questions let the agent keep working — not a blocking wait.
+            // The args casing follows the model-facing schema, which has been
+            // observed as both snake_case and camelCase across tool versions.
+            if (input?["run_async"] as? Bool) == true || (input?["runAsync"] as? Bool) == true {
+                continue
+            }
+            return cursorQuestionText(fromInput: input)
+        }
+        return nil
+    }
+
+    /// True when `name` is Cursor's question tool. Matched loosely (case- and
+    /// separator-insensitive) because the transcript records the model-facing
+    /// tool name, which Cursor has renamed across releases.
+    static func isCursorQuestionToolName(_ name: String) -> Bool {
+        let normalized = name.lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+        switch normalized {
+        case "askquestion", "askquestions", "askuserquestion", "askfollowupquestion":
+            return true
+        default:
+            return false
+        }
+    }
+
+    /// Compose display text from AskQuestion tool args:
+    /// `{title, questions: [{id, prompt, options: [{id, label}], allow_multiple}]}`.
+    /// Prefers the first question's prompt (with a numeric `(+N)` suffix when more
+    /// follow), falls back to the title, then to a flat `question`/`prompt` field,
+    /// and finally to "" so the caller still knows a question is pending.
+    private static func cursorQuestionText(fromInput input: [String: Any]?) -> String {
+        guard let input else { return "" }
+
+        var prompts: [String] = []
+        if let questions = input["questions"] as? [[String: Any]] {
+            for question in questions {
+                let raw = (question["prompt"] as? String) ?? (question["question"] as? String)
+                if let text = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+                    prompts.append(text)
+                }
+            }
+        }
+        if let first = prompts.first {
+            return prompts.count > 1 ? "\(first) (+\(prompts.count - 1))" : first
+        }
+
+        if let title = (input["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !title.isEmpty {
+            return title
+        }
+        // Forward-compatible flat shape.
+        let flat = (input["question"] as? String) ?? (input["prompt"] as? String)
+        if let text = flat?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty {
+            return text
+        }
+        return ""
+    }
+
+    /// Types we care about for the panel: `"user"` and `"assistant"`. Anything
+    /// else — including unknown types and absent-type lines — can be skipped
+    /// without bothering the JSON parser. `cursorRole` marks lines that carry
+    /// no interesting `type` value but do contain a `"role":"user|assistant"`
+    /// marker (Cursor's transcript shape) and therefore still deserve a parse.
+    enum QuickTypeKind: Equatable {
+        case user
+        case assistant
+        case codexEvent
+        case codexResponseItem
+        case cursorRole
+        /// Claude `system` line whose subtype is `away_summary` (session recap).
+        case claudeRecap
+        /// Codex `turn_context` (the turn's model + reasoning effort).
+        case codexTurnContext
+        case irrelevant
+    }
+
+    /// Byte-scan the line for the first `"type":"` occurrence and peek at the
+    /// character that follows the opening quote. A single pass that gives up
+    /// as soon as it sees something that isn't `u`, `a`, or an escape. Returns
+    /// `.irrelevant` when neither `"user"` nor `"assistant"` appears as a
+    /// `type` value, letting the caller skip the JSON parser entirely.
+    ///
+    /// Limitations: does not tolerate whitespace between the colon and the
+    /// opening quote (e.g. `"type" : "user"`). Claude's JSONL writer never
+    /// emits that shape, so lines which do fall through to the parser via the
+    /// `.irrelevant` path get a correct — if slightly more expensive — answer
+    /// by returning nothing, which is safe (we just miss those updates).
+    static func quickTypeProbe(lineBytes: Data) -> QuickTypeKind {
+        guard lineBytes.count >= typeMarker.count + 2 else { return .irrelevant }
+
+        return lineBytes.withUnsafeBytes { rawBuffer -> QuickTypeKind in
+            guard let base = rawBuffer.baseAddress else { return .irrelevant }
+            let ptr = base.assumingMemoryBound(to: UInt8.self)
+            let total = rawBuffer.count
+            let markerLen = typeMarker.count
+            var index = 0
+            // Every `"type":"..."` occurrence in the line gets checked, not only the
+            // first — JSONSerialization is free to reorder top-level keys so the
+            // outer type we care about may sit behind nested `"type":"text"` rows.
+            while index <= total - markerLen {
+                var matched = true
+                for offset in 0..<markerLen where ptr[index + offset] != typeMarker[offset] {
+                    matched = false
+                    break
+                }
+                if matched {
+                    let valueStart = index + markerLen
+                    if valueStart < total {
+                        switch ptr[valueStart] {
+                        case 0x75:  // 'u'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: userBytes) {
+                                return .user
+                            }
+                        case 0x55:  // 'U'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: userInputBytes) {
+                                return .user
+                            }
+                        case 0x61:  // 'a'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: assistantBytes) {
+                                return .assistant
+                            }
+                        case 0x50:  // 'P'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: plannerResponseBytes) {
+                                return .assistant
+                            }
+                        case 0x65:  // 'e'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: eventMsgBytes) {
+                                return .codexEvent
+                            }
+                        case 0x72:  // 'r'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: responseItemBytes) {
+                                return isCodexPublicResponseCandidate(ptr, total: total)
+                                    || isCodexPlanUpdateCandidate(ptr, total: total)
+                                    ? .codexResponseItem : .irrelevant
+                            }
+                        case 0x73:  // 's'
+                            // Only the recap subtype earns a parse; turn_duration /
+                            // stop_hook_summary rows stay on the skip path. The
+                            // subtype sits right after `type`, so a bounded probe
+                            // keeps an unusually long system row O(1) here.
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: systemBytes),
+                               containsMarker(ptr, total: min(total, 4096), marker: awaySummaryMarker) {
+                                return .claudeRecap
+                            }
+                        case 0x74:  // 't'
+                            if hasExactValue(ptr, at: valueStart, total: total, expect: turnContextBytes) {
+                                return .codexTurnContext
+                            }
+                        default:
+                            break
+                        }
+                    }
+                    // Skip past this marker and keep looking — nested objects
+                    // often carry their own `type` key we don't care about.
+                    index = valueStart + 1
+                } else {
+                    index += 1
+                }
+            }
+
+            // No interesting `type` value — check for Cursor's `role`-keyed shape
+            // before giving up. Cursor's writer serializes `{role, message}` with
+            // `role` as the first key, so an O(1) prefix check suffices. Scanning
+            // the whole line instead would misroute the bulk of Codex rollouts
+            // (`response_item` lines carry a nested `"role":"assistant"`) into
+            // the JSON parser and regress streaming CPU. `apply` re-verifies the
+            // shape against the parsed JSON.
+            let roleLen = roleMarker.count
+            if total > roleLen + 1, ptr[0] == 0x7B {  // '{'
+                var prefixMatched = true
+                for offset in 0..<roleLen where ptr[1 + offset] != roleMarker[offset] {
+                    prefixMatched = false
+                    break
+                }
+                if prefixMatched {
+                    let valueStart = 1 + roleLen
+                    if hasExactValue(ptr, at: valueStart, total: total, expect: userBytes)
+                        || hasExactValue(ptr, at: valueStart, total: total, expect: assistantBytes) {
+                        return .cursorRole
+                    }
+                }
+            }
+            return .irrelevant
+        }
+    }
+
+    /// The `"type":"` prefix before the type value. Placed in the header so
+    /// the scanner can bail early on typical tool/meta lines.
+    private static let typeMarker: [UInt8] = Array(#""type":""#.utf8)
+    /// The `"role":"` prefix — Cursor transcripts key entries on `role` only.
+    private static let roleMarker: [UInt8] = Array(#""role":""#.utf8)
+    private static let userBytes: [UInt8] = Array(#"user""#.utf8)
+    private static let assistantBytes: [UInt8] = Array(#"assistant""#.utf8)
+    private static let userInputBytes: [UInt8] = Array(#"USER_INPUT""#.utf8)
+    private static let plannerResponseBytes: [UInt8] = Array(#"PLANNER_RESPONSE""#.utf8)
+
+    private static let eventMsgBytes: [UInt8] = Array(#"event_msg""#.utf8)
+    private static let responseItemBytes: [UInt8] = Array(#"response_item""#.utf8)
+    private static let systemBytes: [UInt8] = Array(#"system""#.utf8)
+    private static let awaySummaryMarker: [UInt8] = Array(#""subtype":"away_summary""#.utf8)
+    private static let turnContextBytes: [UInt8] = Array(#"turn_context""#.utf8)
+    private static let codexMessagePayloadMarker: [UInt8] = Array(
+        #""payload":{"type":"message","#.utf8
+    )
+    private static let codexAssistantRoleMarker: [UInt8] = Array(#""role":"assistant""#.utf8)
+    private static let codexOutputTextMarker: [UInt8] = Array(#""type":"output_text""#.utf8)
+
+    /// Keep large tool results on the no-parse path. Only response items with
+    /// the compact public-message shapes emitted by Codex reach JSONSerialization.
+    private static func isCodexPublicResponseCandidate(
+        _ ptr: UnsafePointer<UInt8>,
+        total: Int
+    ) -> Bool {
+        // Codex writes the payload type and content block at the front of a
+        // response item. Bound the probe so a multi-megabyte tool result stays
+        // O(1) here instead of being scanned once before the fast rejection.
+        //
+        // Model output carries a Responses API id between `type` and `role`
+        // (`{"type":"message","id":"msg_…","role":"assistant",…}`), so match
+        // the three markers independently instead of as one contiguous run.
+        // Quotes inside string values are escaped, so a user message quoting
+        // `"role":"assistant"` cannot match; `apply` re-checks the parsed role.
+        let prefixLength = min(total, 4096)
+        return containsMarker(ptr, total: prefixLength, marker: codexMessagePayloadMarker)
+            && containsMarker(ptr, total: prefixLength, marker: codexAssistantRoleMarker)
+            && containsMarker(ptr, total: prefixLength, marker: codexOutputTextMarker)
+    }
+
+    private static let codexPlanUpdateMarker: [UInt8] = Array(#""name":"update_plan""#.utf8)
+
+    /// `update_plan` calls carry the checklist (`AgentTaskTranscript`). The
+    /// tool name sits right after the payload type, so the same bounded prefix
+    /// probe keeps every other function call on the no-parse path.
+    private static func isCodexPlanUpdateCandidate(
+        _ ptr: UnsafePointer<UInt8>,
+        total: Int
+    ) -> Bool {
+        containsMarker(ptr, total: min(total, 4096), marker: codexPlanUpdateMarker)
+    }
+
+    private static func containsMarker(
+        _ ptr: UnsafePointer<UInt8>,
+        total: Int,
+        marker: [UInt8]
+    ) -> Bool {
+        guard !marker.isEmpty, total >= marker.count else { return false }
+        for start in 0...(total - marker.count) {
+            var matched = true
+            for offset in marker.indices where ptr[start + offset] != marker[offset] {
+                matched = false
+                break
+            }
+            if matched { return true }
+        }
+        return false
+    }
+
+    private static func hasExactValue(
+        _ ptr: UnsafePointer<UInt8>,
+        at start: Int,
+        total: Int,
+        expect: [UInt8]
+    ) -> Bool {
+        guard start + expect.count <= total else { return false }
+        for offset in 0..<expect.count where ptr[start + offset] != expect[expect.startIndex + offset] {
+            return false
+        }
+        return true
+    }
+
+    /// Concatenate every `text` block from a Claude-style `content` value. Accepts
+    /// either a bare string or an array of content blocks.
+    public static func extractText(from content: Any?) -> String? {
+        if let raw = content as? String {
+            var text = raw
+            if let startRange = text.range(of: "<USER_REQUEST>"),
+               let endRange = text.range(of: "</USER_REQUEST>", range: startRange.upperBound..<text.endIndex) {
+                text = String(text[startRange.upperBound..<endRange.lowerBound])
+            }
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+        if let blocks = content as? [[String: Any]] {
+            var parts: [String] = []
+            for block in blocks {
+                guard (block["type"] as? String) == "text" else { continue }
+                if let text = block["text"] as? String {
+                    let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !trimmed.isEmpty { parts.append(trimmed) }
+                }
+            }
+            if parts.isEmpty { return nil }
+            return parts.joined(separator: "\n")
+        }
+        return nil
+    }
+}
