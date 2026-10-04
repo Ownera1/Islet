@@ -49,6 +49,11 @@ struct ScrollPanState {
     private var accumulated: CGFloat = 0
     private var active = false
 
+    init(direction: PanDirection, threshold: CGFloat) {
+        self.direction = direction
+        self.threshold = threshold
+    }
+
     mutating func finish() -> ScrollPanUpdate? {
         let update = active ? ScrollPanUpdate(translation: 0, phase: .ended) : nil
         isTracking = false
