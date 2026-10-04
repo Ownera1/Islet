@@ -11,6 +11,18 @@ if [ -e "$TASK_STAGE" ] || [ -e "$TASK_DMG" ]; then
   exit 1
 fi
 mkdir -p "$TASK_STAGE" "$TASK_ROOT/dist"
+# A distributed local build must not expose Xcode's debugger entitlement.
+TASK_ENTITLEMENTS="$TASK_ROOT/build/local-release-entitlements.plist"
+/usr/bin/codesign -d --entitlements :- "$TASK_APP" > "$TASK_ENTITLEMENTS" 2>/dev/null
+python3 - "$TASK_ENTITLEMENTS" <<'PY'
+import pathlib, plistlib, sys
+path = pathlib.Path(sys.argv[1])
+entitlements = plistlib.loads(path.read_bytes())
+assert entitlements.get('com.apple.security.app-sandbox') is True
+entitlements.pop('com.apple.security.get-task-allow', None)
+path.write_bytes(plistlib.dumps(entitlements))
+PY
+/usr/bin/codesign --force --sign - --entitlements "$TASK_ENTITLEMENTS" "$TASK_APP"
 /usr/bin/codesign --verify --deep --strict "$TASK_APP"
 /usr/bin/ditto "$TASK_APP" "$TASK_STAGE/Agent Usage Notch.app"
 ln -s /Applications "$TASK_STAGE/Applications"

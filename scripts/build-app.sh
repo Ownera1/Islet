@@ -7,4 +7,5 @@ shift "$(( $# > 0 ? 1 : 0 ))"
 exec xcodebuild -project boringNotch.xcodeproj -scheme boringNotch \
   -configuration "$TASK_CONFIGURATION" -derivedDataPath build/DerivedData \
   -clonedSourcePackagesDirPath build/SourcePackages \
-  CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= CODE_SIGNING_REQUIRED=NO "$@" build
+  CODE_SIGN_IDENTITY=- DEVELOPMENT_TEAM= CODE_SIGNING_REQUIRED=NO \
+  ENABLE_HARDENED_RUNTIME=NO "$@" build

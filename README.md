@@ -45,6 +45,8 @@ swift test --package-path Packages/NotchIntegrations --scratch-path build/Integr
 
 Debug/Release 应用输出到 `build/DerivedData/Build/Products/`，安装包和校验文件输出到 `dist/`。构建产物、研究参考仓库和本机配置均不提交到 Git。GitHub Actions 对 `main` 和 PR 执行测试及通用 Release 编译。
 
+此脚本专用于没有 Developer ID 证书的本地签名构建，因此不启用 Hardened Runtime 的 Team ID 框架校验；工程本身保留正式签名时的 Hardened Runtime 配置。打包保留主应用 App Sandbox，并移除调试器访问权限。正式签名和 Apple 公证需要另行提供 Developer ID。
+
 ## 上游与许可证
 
 本项目是修改后的 boring.notch 发行版本，保留 **GPL-3.0** 许可证。CodeIsland 以及参考的 CodexBar 集成部分为 MIT，MediaRemoteAdapter 等第三方许可证保留在 [THIRD_PARTY_LICENSES](THIRD_PARTY_LICENSES) 中，亦随安装包提供。

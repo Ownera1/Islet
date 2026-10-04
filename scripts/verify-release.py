@@ -14,6 +14,13 @@ info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
 assert info['CFBundleIdentifier'] == 'com.ownera1.agentusagenotch'
 assert info['LSMinimumSystemVersion'] == '15.0'
 subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
+entitlements = plistlib.loads(subprocess.check_output(
+    ['codesign', '-d', '--entitlements', ':-', str(app)], stderr=subprocess.DEVNULL))
+assert entitlements.get('com.apple.security.app-sandbox') is True
+assert not entitlements.get('com.apple.security.get-task-allow'), 'Do not distribute debugger access'
+signing = subprocess.check_output(['codesign', '-dv', '--verbose=4', str(app)], stderr=subprocess.STDOUT, text=True)
+assert 'Signature=adhoc' in signing
+assert '(adhoc,runtime)' not in signing, 'Local signing has no Team ID for hardened library validation'
 paths = [app / 'Contents/MacOS' / info['CFBundleExecutable'],
          app / 'Contents/XPCServices/BoringNotchXPCHelper.xpc/Contents/MacOS/BoringNotchXPCHelper',
          app / 'Contents/Resources/IntegrationResources/notch-agent-bridge']
@@ -38,6 +45,7 @@ manifest = {
     'sourceCommit': revision, 'repository': 'https://github.com/Ownera1/agent-usage-notch',
     'architectures': ['arm64', 'x86_64'], 'minimumMacOS': '15.0',
     'signature': 'ad-hoc', 'notarized': False,
+    'appSandbox': True, 'hardenedRuntime': False, 'debuggerAccess': False,
     'installer': dmg.name, 'size': dmg.stat().st_size,
     'sha256': digest.hexdigest(),
     'packagedAt': datetime.now(timezone.utc).isoformat(),
