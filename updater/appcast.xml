@@ -6,6 +6,27 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.4</title>
+            <pubDate>Sun, 04 Oct 2026 16:17:43 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>5</sparkle:version>
+            <sparkle:shortVersionString>0.1.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[## 0.1.4
+
+- 修复 agy CLI 已登录但 Islet 后台读不到订阅额度的问题：XPC Helper 加入用户登录安全会话，使用已有钥匙串凭据。
+- 将 agy CLI 与 Antigravity 的共享额度合并为唯一的 Google AI 卡片，优先读取 CLI，失败后查询已运行的 Antigravity；不重复计算额度。
+- 额度读取不自动打开登录网页，无论对应卡片是否显示；需要用户处理时显示文字提醒。
+- 区分钥匙串访问失败与未登录，避免要求已登录用户重复登录。
+- Gemini CLI 不参与额度页面或后台轮询；卡片显示实际来源、剩余百分比和重置时间。
+
+需要 macOS 15 或更新版本，支持 Apple Silicon 和 Intel。0.1.3 可通过应用内“检查更新…”安装；0.1.2 及更早版本需要手动安装。
+
+下载 DMG，将 Islet.app 拖入 Applications。应用标识保持不变，已有设置与 Agent 连接继续使用。发行包使用本地代码签名和 Ed25519 更新签名，尚未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.4/Islet-0.1.4-universal.zip" length="17164701" type="application/octet-stream" sparkle:edSignature="oLpz7u4RfXKOfqZzc8TGqrR9TyRY9F61qRJxEv7FHHqQer/fHqqR9frBX7w6gih5MZatr2EUcF0i8FKZ7AMBAA=="/>
+        </item>
+        <item>
             <title>0.1.3</title>
             <pubDate>Sun, 04 Oct 2026 14:34:28 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
