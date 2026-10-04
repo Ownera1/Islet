@@ -13,13 +13,15 @@
 - macOS **15 或更新版本**。
 - 通用二进制包含 **Apple Silicon / Intel**。实机运行验证使用 Apple Silicon。
 - 当前发行包使用本地签名，**尚未经过 Apple 公证**。首次打开可能需要在“系统设置 → 隐私与安全性”允许。
-- 此集成版有独立应用标识和设置，更新通过本仓库 Release 下载。
+- 此集成版有独立应用标识和设置，0.1.3 起通过 Sparkle 在应用内检查、下载、验证并安装 GitHub Release 更新。
 
 `v0.1.1` 使用新的“极简终端”应用图标：暖白底色、黑色刘海、终端符号和珊瑚红状态点。Dock、首次引导和设置中的图标预览保持一致。
 
 `v0.1.2` 修复内容滚动误收起刘海的问题：在订阅卡片、Agent 回复等内容区域上下滑动可正常浏览；上滑收起手势仅在顶部导航区域开始时生效，滚动惯性不会触发收起。
 
-具体步骤见 [INSTALL.md](INSTALL.md)。
+`v0.1.3` 加入应用内更新与两种音乐布局。首次从 0.1.2 或更早版本升级仍需手动安装一次；后续由 Sparkle 自动检查，可选择安装或后台下载。
+
+具体步骤见 [INSTALL.md](INSTALL.md)，签名、发布和首次升级说明见 [UPDATES.md](UPDATES.md)。
 
 ## 功能
 
@@ -27,7 +29,8 @@
 - 一次性工具审批和问题回答。Antigravity 当前为观察模式，审批仍由原应用处理。
 - Claude、OpenAI、Gemini、Antigravity 四种配额来源。每 5 分钟同步，显示剩余百分比、重置时间和数据更新时间。
 - 设置中的四个独立可见性开关，立即生效并持久保存；隐藏卡片不影响后台同步。
-- Apple Music 歌词优先，其余播放器使用 LRCLIB。存在 LRC 时跟随播放进度，切歌取消旧查询。
+- Apple Music 自带歌词优先，缺失时严格匹配网易云歌曲并回退到 LRCLIB。支持 YRC／增强 LRC 逐字时间与普通 LRC 行级扫光，切歌取消旧查询。
+- Home 显示当前歌词和下一句预告；引号按钮切换歌词专注模式，日历保留原状态。专注歌词可点击跳转，手动滚动后 4 秒恢复跟随，设置中可微调时间偏移。
 - 保留 boring.notch 的原生主页、媒体控制、日历、暂存器和隔空投送等功能。
 
 Gemini 当前读取 CLI / Code Assist 配额，OpenAI 当前读取 Codex 配额；不代表网页聊天中所有模型的限制。Gemini 与 Antigravity 独立读取。未登录、过期和服务错误均显示明确状态。
@@ -49,9 +52,11 @@ swift test --package-path Packages/NotchIntegrations --scratch-path build/Integr
 ./scripts/build-app.sh Release 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 # 在已提交且干净的源码树上打包、验签、生成 SHA-256 和发布清单
 ./scripts/package-release.sh
+# 使用本应用钥匙串中的 Ed25519 密钥生成签名 feed（仅生成文件，不发布）
+./scripts/generate-appcast.sh
 ```
 
-Debug/Release 应用输出到 `build/DerivedData/Build/Products/`，安装包和校验文件输出到 `dist/`。构建产物、研究参考仓库和本机配置均不提交到 Git。GitHub Actions 对 `main` 和 PR 执行测试及通用 Release 编译。
+Debug/Release 应用输出到 `build/DerivedData/Build/Products/`，安装包和校验文件输出到 `dist/`。构建产物、研究参考仓库和本机配置均不提交到 Git。GitHub Actions 对 `main` 和 PR 执行测试及通用 Release 编译；推送与工程版本一致的 `v*` 标签后执行签名发布工作流。
 
 此脚本专用于没有 Developer ID 证书的本地签名构建，因此不启用 Hardened Runtime 的 Team ID 框架校验；工程本身保留正式签名时的 Hardened Runtime 配置。打包保留主应用 App Sandbox，并移除调试器访问权限。正式签名和 Apple 公证需要另行提供 Developer ID。
 

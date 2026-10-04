@@ -9,18 +9,26 @@
 import Combine
 import Defaults
 import SwiftUI
+import NotchIntegrationCore
 
 // MARK: - Music Player Components
 
 struct MusicPlayerView: View {
     @EnvironmentObject var vm: BoringViewModel
     let albumArtNamespace: Namespace.ID
+    @Binding var focused: Bool
+    let currentDate: Date
+    let coverSize: CGFloat
+    let infoWidth: CGFloat
 
     var body: some View {
-        HStack {
-            AlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace).padding(.all, 5)
-            MusicControlsView().drawingGroup().compositingGroup()
+        HStack(spacing: 12) {
+            AlbumArtView(vm: vm, albumArtNamespace: albumArtNamespace)
+                .frame(width: coverSize, height: coverSize)
+            MusicControlsView(focused: $focused, currentDate: currentDate)
+                .frame(width: infoWidth, height: 134)
         }
+        .frame(height: 134)
     }
 }
 
@@ -68,7 +76,7 @@ struct AlbumArtView: View {
             .buttonStyle(PlainButtonStyle())
             .scaleEffect(musicManager.isPlaying ? 1 : 0.85)
             
-            albumArtDarkOverlay
+            albumArtDarkOverlay.allowsHitTesting(false)
         }
     }
 
@@ -101,8 +109,9 @@ struct AlbumArtView: View {
             AppIcon(for: musicManager.bundleIdentifier ?? "com.apple.Music")
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(width: 30, height: 30)
-                .offset(x: 10, y: 10)
+                .frame(width: 18, height: 18)
+                .opacity(0.7)
+                .offset(x: 4, y: 4)
                 .transition(.scale.combined(with: .opacity))
                 .zIndex(2)
         }
@@ -111,115 +120,97 @@ struct AlbumArtView: View {
 
 struct MusicControlsView: View {
     @ObservedObject var musicManager = MusicManager.shared
-        @EnvironmentObject var vm: BoringViewModel
-        @ObservedObject var webcamManager = WebcamManager.shared
+    @EnvironmentObject var vm: BoringViewModel
+    @ObservedObject var webcamManager = WebcamManager.shared
+    @Binding var focused: Bool
+    let currentDate: Date
     @State private var sliderValue: Double = 0
-    @State private var dragging: Bool = false
+    @State private var dragging = false
     @State private var lastDragged: Date = .distantPast
     @Default(.musicControlSlots) private var slotConfig
     @Default(.musicControlSlotLimit) private var slotLimit
+    @Default(.enableLyrics) private var enableLyrics
+    @Default(.lyricsTimeOffset) private var lyricsTimeOffset
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var lyricTime: Double {
+        musicManager.estimatedPlaybackPosition(at: currentDate) + lyricsTimeOffset
+    }
 
     var body: some View {
-        VStack(alignment: .leading) {
-            songInfoAndSlider
-            slotToolbar
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-
-    private var songInfoAndSlider: some View {
-        GeometryReader { geo in
-            VStack(alignment: .leading, spacing: 4) {
-                songInfo(width: geo.size.width)
-                musicSlider
-            }
-        }
-        .padding(.top, 10)
-        .padding(.leading, 5)
-    }
-
-    private func songInfo(width: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            MarqueeText(
-                $musicManager.songTitle, font: .headline, nsFont: .headline, textColor: .white,
-                frameWidth: width)
-            MarqueeText(
-                $musicManager.artistName,
-                font: .headline,
-                nsFont: .headline,
-                textColor: Defaults[.playerColorTinting]
-                    ? Color(nsColor: musicManager.avgColor)
-                        .ensureMinimumBrightness(factor: 0.6) : .gray,
-                frameWidth: width
-            )
-            .fontWeight(.medium)
-            if Defaults[.enableLyrics] {
-                TimelineView(.animation(minimumInterval: 0.25)) { timeline in
-                    let currentElapsed: Double = {
-                        guard musicManager.isPlaying else { return musicManager.elapsedTime }
-                        let delta = timeline.date.timeIntervalSince(musicManager.timestampDate)
-                        let progressed = musicManager.elapsedTime + (delta * musicManager.playbackRate)
-                        return min(max(progressed, 0), musicManager.songDuration)
-                    }()
-                    let line: String = {
-                        if musicManager.isFetchingLyrics { return "Loading lyrics…" }
-                        if !musicManager.syncedLyrics.isEmpty {
-                            return musicManager.lyricLine(at: currentElapsed)
-                        }
-                        let trimmed = musicManager.currentLyrics.trimmingCharacters(in: .whitespacesAndNewlines)
-                        return trimmed.isEmpty ? "No lyrics found" : trimmed.components(separatedBy: .newlines).first(where: { !$0.isEmpty }) ?? trimmed
-                    }()
-                    let isPersian = line.unicodeScalars.contains { scalar in
-                        let v = scalar.value
-                        return v >= 0x0600 && v <= 0x06FF
-                    }
-                    MarqueeText(
-                        .constant(line),
-                        font: .subheadline,
-                        nsFont: .subheadline,
-                        textColor: musicManager.isFetchingLyrics ? .gray.opacity(0.7) : .gray,
-                        frameWidth: width
-                    )
-                    .font(isPersian ? .custom("Vazirmatn-Regular", size: NSFont.preferredFont(forTextStyle: .subheadline).pointSize) : .subheadline)
-                    .lineLimit(1)
-                    .opacity(1)
-                    .accessibilityLabel("Lyrics: " + line)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
+            GeometryReader { geo in
+                VStack(alignment: .leading, spacing: 6) {
+                    titleRow(width: geo.size.width)
+                    HomeLyricView(document: musicManager.lyricsDocument,
+                                  availability: musicManager.lyricsAvailability,
+                                  elapsed: lyricTime, duration: musicManager.songDuration,
+                                  date: currentDate, reduceMotion: reduceMotion)
+                        .frame(height: focused || !enableLyrics || musicManager.lyricsAvailability == .unavailable ? 0 : 40)
+                        .opacity(focused ? 0 : 1)
+                        .clipped()
                 }
+                .frame(maxHeight: .infinity, alignment: musicManager.lyricsAvailability == .unavailable || !enableLyrics ? .center : .top)
+            }
+            .frame(height: 72)
+            MusicSliderView(
+                sliderValue: $sliderValue, duration: $musicManager.songDuration,
+                lastDragged: $lastDragged, color: musicManager.avgColor, dragging: $dragging,
+                currentDate: currentDate, timestampDate: musicManager.timestampDate,
+                elapsedTime: musicManager.elapsedTime, playbackRate: musicManager.playbackRate,
+                isPlaying: musicManager.isPlaying
+            ) { musicManager.seek(to: $0) }
+            .frame(height: 34)
+            slotToolbar.frame(height: 28)
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func titleRow(width: CGFloat) -> some View {
+        if focused {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(musicManager.songTitle).font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                Text(musicManager.artistName).font(.system(size: 12)).foregroundStyle(playerAccent)
+            }
+            .lineLimit(1)
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(musicManager.songTitle)
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                Text(musicManager.artistName)
+                    .font(.system(size: 12)).foregroundStyle(playerAccent)
+                    .lineLimit(1).frame(maxWidth: width * 0.45, alignment: .leading)
+                    .layoutPriority(1)
             }
         }
     }
 
-    private var musicSlider: some View {
-        TimelineView(.animation(minimumInterval: musicManager.playbackRate > 0 ? 0.1 : nil)) { timeline in
-            MusicSliderView(
-                sliderValue: $sliderValue,
-                duration: $musicManager.songDuration,
-                lastDragged: $lastDragged,
-                color: musicManager.avgColor,
-                dragging: $dragging,
-                currentDate: timeline.date,
-                timestampDate: musicManager.timestampDate,
-                elapsedTime: musicManager.elapsedTime,
-                playbackRate: musicManager.playbackRate,
-                isPlaying: musicManager.isPlaying
-            ) { newValue in
-                MusicManager.shared.seek(to: newValue)
-            }
-            .padding(.top, 5)
-            .frame(height: 36)
-        }
-    }
+    private var playerAccent: Color { Color(red: 0.90, green: 0.38, blue: 0.37) }
 
     private var slotToolbar: some View {
-        let slots = activeSlots
-        return HStack(spacing: 6) {
-            ForEach(Array(slots.enumerated()), id: \.offset) { index, slot in
+        HStack(spacing: 2) {
+            ForEach(Array(activeSlots.enumerated()), id: \.offset) { _, slot in
                 slotView(for: slot)
-                    .frame(alignment: .center)
+                    .frame(maxWidth: .infinity)
+            }
+            if enableLyrics {
+                Button { focused.toggle() } label: {
+                    Image(systemName: "quote.bubble")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(focused ? .white : Color(white: 0.6))
+                        .frame(width: 26, height: 24)
+                        .background(focused ? Color(white: 0.17) : .clear, in: RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .disabled(!musicManager.lyricsAvailability.canFocus)
+                .opacity(musicManager.lyricsAvailability.canFocus ? 1 : 0.35)
+                .help(focused ? "返回主页模式" : "歌词专注模式")
+                .accessibilityLabel(focused ? "返回主页模式" : "歌词专注模式")
+                .accessibilityValue(focused ? "已开启" : "已关闭")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .center)
     }
 
     private var activeSlots: [MusicControlButton] {
@@ -228,7 +219,8 @@ struct MusicControlsView: View {
             MusicControlButton.maxSlotCount
         )
         let padded = slotConfig.padded(to: sanitizedLimit, filler: .none)
-        let result = Array(padded.prefix(sanitizedLimit))
+        let configured = Array(padded.prefix(sanitizedLimit))
+        let result = configured.filter { $0 != .none }
         // If calendar and camera are both visible alongside music, hide the edge slots
         let shouldHideEdges = Defaults[.showCalendar] && Defaults[.showMirror] && webcamManager.cameraAvailable && vm.isCameraExpanded
         if shouldHideEdges && result.count >= 5 {
@@ -242,23 +234,23 @@ struct MusicControlsView: View {
     private func slotView(for slot: MusicControlButton) -> some View {
         switch slot {
         case .shuffle:
-            HoverButton(icon: "shuffle", iconColor: musicManager.isShuffled ? .red : .primary, scale: .medium) {
+            CompactMusicButton(icon: "shuffle", iconColor: musicManager.isShuffled ? .red : .primary, size: 15) {
                 MusicManager.shared.toggleShuffle()
             }
         case .previous:
-            HoverButton(icon: "backward.fill", scale: .medium) {
+            CompactMusicButton(icon: "backward.fill", size: 15) {
                 MusicManager.shared.previousTrack()
             }
         case .playPause:
-            HoverButton(icon: musicManager.isPlaying ? "pause.fill" : "play.fill", scale: .large) {
+            CompactMusicButton(icon: musicManager.isPlaying ? "pause.fill" : "play.fill", size: 20) {
                 MusicManager.shared.togglePlay()
             }
         case .next:
-            HoverButton(icon: "forward.fill", scale: .medium) {
+            CompactMusicButton(icon: "forward.fill", size: 15) {
                 MusicManager.shared.nextTrack()
             }
         case .repeatMode:
-            HoverButton(icon: repeatIcon, iconColor: repeatIconColor, scale: .medium) {
+            CompactMusicButton(icon: repeatIcon, iconColor: repeatIconColor, size: 15) {
                 MusicManager.shared.toggleRepeat()
             }
         case .volume:
@@ -266,11 +258,11 @@ struct MusicControlsView: View {
         case .favorite:
             FavoriteControlButton()
         case .goBackward:
-            HoverButton(icon: "gobackward.15", scale: .medium) {
+            CompactMusicButton(icon: "gobackward.15", size: 15) {
                 MusicManager.shared.skip(seconds: -15)
             }
         case .goForward:
-            HoverButton(icon: "goforward.15", scale: .medium) {
+            CompactMusicButton(icon: "goforward.15", size: 15) {
                 MusicManager.shared.skip(seconds: 15)
             }
         case .none:
@@ -440,32 +432,80 @@ struct NotchHomeView: View {
         Defaults[.showMirror] && webcamManager.cameraAvailable && vm.isCameraExpanded
     }
 
+    @ObservedObject private var musicManager = MusicManager.shared
+    @ObservedObject private var calendarManager = CalendarManager.shared
+    @Default(.showCalendar) private var showCalendar
+    @Default(.enableLyrics) private var enableLyrics
+    @Default(.autoLyricsFocusWhenCalendarEmpty) private var autoFocus
+    @Default(.lyricsTimeOffset) private var lyricsTimeOffset
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var focused: Bool { enableLyrics && musicManager.lyricsFocusRequested }
+    private var modeAnimation: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.4) }
+
     private var mainContent: some View {
-        HStack(alignment: .top, spacing: (shouldShowCamera && Defaults[.showCalendar]) ? 10 : 15) {
-            MusicPlayerView(albumArtNamespace: albumArtNamespace)
-
-            if Defaults[.showCalendar] {
-                CalendarView()
-                    .frame(width: shouldShowCamera ? 170 : 215)
-                    .onHover { isHovering in
-                        vm.isHoveringCalendar = isHovering
+        GeometryReader { geometry in
+            let cover: CGFloat = focused ? 104 : 112
+            let info: CGFloat = shouldShowCamera ? 160 : (focused ? 180 : 224)
+            let right = max(0, geometry.size.width - cover - info - 24)
+            TimelineView(.animation(minimumInterval: reduceMotion ? 0.25 : 1.0 / 30,
+                                    paused: vm.notchState != .open || coordinator.currentView != .home
+                                        || (!musicManager.isPlaying && !musicManager.isFetchingLyrics))) { timeline in
+                HStack(alignment: .center, spacing: 12) {
+                    MusicPlayerView(albumArtNamespace: albumArtNamespace,
+                                    focused: $musicManager.lyricsFocusRequested,
+                                    currentDate: timeline.date, coverSize: cover, infoWidth: info)
+                    ZStack {
+                        // Stable identity preserves the selected date and scroll position across mode changes.
+                        HStack(spacing: 10) {
+                            if showCalendar {
+                                CalendarView()
+                                    .frame(width: shouldShowCamera ? min(170, right * 0.6) : right)
+                                    .onHover { vm.isHoveringCalendar = !focused && $0 }
+                            }
+                            if shouldShowCamera {
+                                CameraPreviewView(webcamManager: webcamManager).scaledToFit()
+                            }
+                        }
+                        .opacity(focused ? 0 : 1)
+                        .allowsHitTesting(!focused)
+                        .accessibilityHidden(focused)
+                        FocusLyricsView(document: musicManager.lyricsDocument,
+                                        availability: musicManager.lyricsAvailability,
+                                        elapsed: musicManager.estimatedPlaybackPosition(at: timeline.date) + lyricsTimeOffset,
+                                        duration: musicManager.songDuration, date: timeline.date,
+                                        reduceMotion: reduceMotion,
+                                        seek: { musicManager.seek(to: $0 - lyricsTimeOffset) })
+                            .opacity(focused ? 1 : 0)
+                            .allowsHitTesting(focused)
+                            .accessibilityHidden(!focused)
                     }
-                    .environmentObject(vm)
-                    .transition(.opacity)
-            }
-
-            if shouldShowCamera {
-                CameraPreviewView(webcamManager: webcamManager)
-                    .scaledToFit()
-                    .opacity(vm.notchState == .closed ? 0 : 1)
-                    .blur(radius: vm.notchState == .closed ? 20 : 0)
-                    .animation(.interactiveSpring(response: 0.32, dampingFraction: 0.76, blendDuration: 0), value: shouldShowCamera)
+                    .frame(width: right, height: 134)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.35), value: focused)
+                }
             }
         }
-        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
+        .frame(height: 134)
+        .animation(modeAnimation, value: focused)
+        .onChange(of: focused) { _, _ in vm.isHoveringCalendar = false }
+        .onChange(of: musicManager.lyricsAvailability) { _, state in
+            if state == .unavailable { musicManager.lyricsFocusRequested = false }
+            enterAutomaticFocusIfNeeded()
+        }
+        .onChange(of: calendarManager.events) { _, _ in enterAutomaticFocusIfNeeded() }
+        .onChange(of: autoFocus) { _, _ in enterAutomaticFocusIfNeeded() }
+        .onAppear { enterAutomaticFocusIfNeeded() }
         .blur(radius: vm.notchState == .closed ? 30 : 0)
     }
+
+    private func enterAutomaticFocusIfNeeded() {
+        if autoFocus && showCalendar && EventListView.filteredEvents(events: calendarManager.events).isEmpty
+            && musicManager.lyricsAvailability.canFocus {
+            musicManager.lyricsFocusRequested = true
+        }
+    }
 }
+
 
 struct MusicSliderView: View {
     @Binding var sliderValue: Double
@@ -482,7 +522,7 @@ struct MusicSliderView: View {
 
 
     var body: some View {
-        VStack {
+        VStack(spacing: 4) {
             CustomSlider(
                 value: $sliderValue,
                 range: 0...duration,
@@ -501,11 +541,12 @@ struct MusicSliderView: View {
                 Text(timeString(from: duration))
             }
             .fontWeight(.medium)
-            .foregroundColor(
-                Defaults[.playerColorTinting]
-                    ? Color(nsColor: color).ensureMinimumBrightness(factor: 0.6) : .gray
-            )
-            .font(.caption)
+            .foregroundStyle(Color(red: 0.90, green: 0.38, blue: 0.37))
+            .font(.system(size: 11))
+        }
+        .onAppear { sliderValue = MusicManager.shared.estimatedPlaybackPosition(at: currentDate) }
+        .onChange(of: elapsedTime) { _, _ in
+            if !dragging { sliderValue = MusicManager.shared.estimatedPlaybackPosition(at: currentDate) }
         }
         .onChange(of: currentDate) {
            guard !dragging, timestampDate.timeIntervalSince(lastDragged) > -1 else { return }
@@ -574,6 +615,277 @@ struct CustomSlider: View {
                     }
             )
             .animation(.spring(response: 0.35, dampingFraction: 0.7), value: dragging)
+        }
+    }
+}
+
+// MARK: - Lyrics presentation
+
+private struct CompactMusicButton: View {
+    let icon: String
+    var iconColor: Color = .white
+    var size: CGFloat = 15
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: size, weight: .medium))
+                .foregroundStyle(iconColor)
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    private var label: String {
+        switch icon {
+        case "backward.fill": return "上一首"
+        case "forward.fill": return "下一首"
+        case "pause.fill": return "暂停"
+        case "play.fill": return "播放"
+        case "shuffle": return "随机播放"
+        case "repeat", "repeat.1": return "循环播放"
+        case "gobackward.15": return "后退 15 秒"
+        case "goforward.15": return "前进 15 秒"
+        default: return icon
+        }
+    }
+}
+
+private struct LyricsLoadingPlaceholder: View {
+    let date: Date
+    let reduceMotion: Bool
+
+    var body: some View {
+        Capsule().fill(.white.opacity(reduceMotion ? 0.08 : 0.06 + 0.035 * (1 + sin(date.timeIntervalSinceReferenceDate * 2))))
+            .frame(width: 88, height: 5)
+            .accessibilityLabel("歌词加载中")
+    }
+}
+
+private struct InstrumentalLyricsView: View {
+    var body: some View {
+        Label("纯音乐，请欣赏", systemImage: "music.note")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(.white.opacity(0.65))
+    }
+}
+
+private struct HomeLyricView: View {
+    let document: LyricsDocument
+    let availability: LyricsAvailability
+    let elapsed: Double
+    let duration: Double
+    let date: Date
+    let reduceMotion: Bool
+
+    var body: some View {
+        Group {
+            switch availability {
+            case .loading:
+                LyricsLoadingPlaceholder(date: date, reduceMotion: reduceMotion)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            case .instrumental:
+                InstrumentalLyricsView().frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            case .unavailable:
+                Color.clear
+            case .available:
+                let index = Lyrics.index(at: elapsed, in: document.lines)
+                let shown = index ?? (document.lines.isEmpty ? nil : 0)
+                VStack(alignment: .leading, spacing: 3) {
+                    if let shown {
+                        SweepLyricLine(line: document.lines[shown], elapsed: elapsed,
+                                       progress: index == nil ? 0 : Lyrics.progress(at: elapsed, index: shown, in: document.lines, duration: duration),
+                                       fontSize: 15, reduceMotion: reduceMotion)
+                            .frame(height: 20)
+                            .id(shown)
+                            .transition(.opacity.combined(with: .offset(y: 6)))
+                        if shown + 1 < document.lines.count {
+                            Text(document.lines[shown + 1].text)
+                                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.4)).lineLimit(1)
+                        }
+                    } else {
+                        Text(document.plain.components(separatedBy: .newlines).first(where: { !$0.isEmpty }) ?? "")
+                            .font(.system(size: 15, weight: .medium)).foregroundStyle(.white).lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: shown)
+            }
+        }
+        .clipped()
+    }
+}
+
+/// Only the lit layer is masked. Explicit endpoints avoid a half-lit first/last character.
+private struct SweepText: View {
+    let text: String
+    let progress: Double
+
+    var body: some View {
+        Text(verbatim: text).foregroundStyle(.white.opacity(0.35))
+            .overlay {
+                Text(verbatim: text).foregroundStyle(.white)
+                    .mask {
+                        if progress >= 1 {
+                            Color.white
+                        } else if progress <= 0 {
+                            Color.clear
+                        } else {
+                            let start = min(1, max(0, progress * 1.12 - 0.12))
+                            let end = min(1, max(0, progress * 1.12))
+                            LinearGradient(stops: [.init(color: .white, location: start),
+                                                   .init(color: .clear, location: end)],
+                                           startPoint: .leading, endPoint: .trailing)
+                        }
+                    }
+            }
+    }
+}
+
+private struct SweepLyricLine: View {
+    let line: LyricLine
+    let elapsed: Double
+    let progress: Double
+    var fontSize: CGFloat = 16
+    let reduceMotion: Bool
+    @State private var textWidth: CGFloat = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let overflow = max(0, textWidth - geo.size.width)
+            let scroll = min(1, max(0, (progress - 0.1) / 0.8))
+            Group {
+                if line.words.isEmpty {
+                    SweepText(text: line.text, progress: progress)
+                } else {
+                    HStack(spacing: 0) {
+                        ForEach(Array(line.words.enumerated()), id: \.offset) { _, word in
+                            SweepText(text: word.text, progress: progress >= 1 ? 1 : (progress <= 0 ? 0 : word.progress(at: elapsed)))
+                        }
+                    }
+                }
+            }
+            .font(.system(size: fontSize, weight: .medium))
+            .fixedSize(horizontal: true, vertical: false)
+            .frame(height: geo.size.height)
+            .offset(x: reduceMotion ? 0 : -overflow * scroll)
+        }
+        .clipped()
+        .task(id: line.text + String(Double(fontSize))) {
+            textWidth = (line.text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: fontSize, weight: .medium)]).width
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(line.text)
+    }
+}
+
+private struct FocusLyricsView: View {
+    let document: LyricsDocument
+    let availability: LyricsAvailability
+    let elapsed: Double
+    let duration: Double
+    let date: Date
+    let reduceMotion: Bool
+    let seek: (Double) -> Void
+    @State private var following = true
+    @State private var resumeTask: Task<Void, Never>?
+
+    private var currentIndex: Int? { Lyrics.index(at: elapsed, in: document.lines) }
+
+    var body: some View {
+        Group {
+            switch availability {
+            case .loading:
+                LyricsLoadingPlaceholder(date: date, reduceMotion: reduceMotion)
+            case .instrumental:
+                InstrumentalLyricsView()
+            case .unavailable:
+                Color.clear
+            case .available:
+                if document.lines.isEmpty {
+                    ScrollView {
+                        Text(document.plain).font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(.white).frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .scrollIndicators(.hidden)
+                } else {
+                    timedLyrics
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: document) { _, _ in
+            resumeTask?.cancel()
+            following = true
+        }
+        .onDisappear { resumeTask?.cancel() }
+    }
+
+    private var timedLyrics: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: 51.5)
+                    ForEach(Array(document.lines.enumerated()), id: \.offset) { index, line in
+                        let current = currentIndex ?? 0
+                        let distance = abs(index - current)
+                        Button {
+                            following = true
+                            seek(line.time)
+                        } label: {
+                            SweepLyricLine(line: line, elapsed: elapsed,
+                                           progress: index < current ? 1 : (index == current && currentIndex != nil ? Lyrics.progress(at: elapsed, index: index, in: document.lines, duration: duration) : 0),
+                                           reduceMotion: reduceMotion)
+                                .frame(height: 31)
+                                .opacity(distance == 0 ? 1 : max(0.12, 0.42 - Double(distance - 1) * 0.15))
+                                .blur(radius: reduceMotion || distance == 0 || distance > 3 ? 0 : min(CGFloat(distance) * 1.2, 3.6))
+                                .scaleEffect(distance == 0 ? 1 : 0.92, anchor: .leading)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("跳转到这一句")
+                        .id(index)
+                    }
+                    Color.clear.frame(height: 51.5)
+                }
+            }
+            .scrollIndicators(.hidden)
+            .mask {
+                LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .white, location: 0.24),
+                                       .init(color: .white, location: 0.76), .init(color: .clear, location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .onAppear { proxy.scrollTo(currentIndex ?? 0, anchor: .center) }
+            .onChange(of: currentIndex) { _, index in
+                guard following else { return }
+                withAnimation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.85)) {
+                    proxy.scrollTo(index ?? 0, anchor: .center)
+                }
+            }
+            .onChange(of: following) { _, follows in
+                if follows {
+                    withAnimation(reduceMotion ? nil : .spring(response: 0.5, dampingFraction: 0.85)) {
+                        proxy.scrollTo(currentIndex ?? 0, anchor: .center)
+                    }
+                }
+            }
+            .onScrollPhaseChange { old, new in
+                if new == .interacting || new == .decelerating {
+                    resumeTask?.cancel()
+                    following = false
+                }
+                if new == .idle && old != .animating && !following {
+                    resumeTask = Task { @MainActor in
+                        do {
+                            try await Task.sleep(for: .seconds(4))
+                            following = true
+                        } catch { }
+                    }
+                }
+            }
         }
     }
 }

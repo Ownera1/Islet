@@ -23,7 +23,7 @@ class MusicManager: ObservableObject {
     private var debounceIdleTask: Task<Void, Never>?
     private var lyricsTask: Task<Void, Never>?
     private var lyricsKey = ""
-    private var lyricsCache: [String: (plain: String, synced: [(time: Double, text: String)])] = [:]
+    private var lyricsCache: [String: LyricsDocument] = [:]
 
     // Helper to check if macOS has removed support for NowPlayingController
     public private(set) var isNowPlayingDeprecated: Bool = false
@@ -54,7 +54,12 @@ class MusicManager: ObservableObject {
     @Published var usingAppIconForArtwork: Bool = false
     @Published var currentLyrics: String = ""
     @Published var isFetchingLyrics: Bool = false
-    @Published var syncedLyrics: [(time: Double, text: String)] = []
+    @Published var lyricsDocument = LyricsDocument()
+    // Session-only, shared by all displays and preserved when Home is reopened.
+    @Published var lyricsFocusRequested = false
+    var lyricsAvailability: LyricsAvailability {
+        isFetchingLyrics ? .loading : lyricsDocument.availability
+    }
     @Published var canFavoriteTrack: Bool = false
     @Published var isFavoriteTrack: Bool = false
 
@@ -359,14 +364,22 @@ class MusicManager: ObservableObject {
     private func fetchLyricsIfAvailable(bundleIdentifier: String?, title: String, artist: String, album: String, duration: Double) {
         let key = [bundleIdentifier ?? "", title, artist, album, String(Int(duration))].joined(separator: "\u{1f}")
         guard key != lyricsKey else { return }
-        lyricsTask?.cancel(); lyricsKey = key
-        currentLyrics = ""; syncedLyrics = []; isFetchingLyrics = false
-        guard Defaults[.enableLyrics], !title.isEmpty else { return }
-        if let cached = lyricsCache[key] { currentLyrics = cached.plain; syncedLyrics = cached.synced; return }
-        isFetchingLyrics = true
+        lyricsTask?.cancel()
+        lyricsKey = key
+        isFetchingLyrics = Defaults[.enableLyrics] && !title.isEmpty
+        currentLyrics = ""
+        lyricsDocument = LyricsDocument()
+        guard isFetchingLyrics else {
+            lyricsFocusRequested = false
+            return
+        }
+        if let cached = lyricsCache[key] {
+            applyLyrics(cached)
+            return
+        }
         lyricsTask = Task { @MainActor [weak self] in
             guard let self else { return }
-            var plain = ""; var synced: [(time: Double, text: String)] = []
+            var document = LyricsDocument()
             if bundleIdentifier == "com.apple.Music" {
                 let script = """
                 tell application "Music"
@@ -379,51 +392,91 @@ class MusicManager: ObservableObject {
                     return ""
                 end tell
                 """
-                if let result = try? await AppleScriptHelper.execute(script) { plain = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "" }
+                if let result = try? await AppleScriptHelper.execute(script) {
+                    let plain = result.stringValue?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                    document = LyricsDocument(plain: plain, lines: Lyrics.parseEnhancedLRC(plain))
+                }
                 guard !Task.isCancelled, self.lyricsKey == key else { return }
             }
-            if plain.isEmpty {
-                do {
-                    var components = URLComponents(string: "https://lrclib.net/api/get")!
-                    components.queryItems = [URLQueryItem(name: "track_name", value: title), URLQueryItem(name: "artist_name", value: artist)]
-                    if !album.isEmpty { components.queryItems?.append(URLQueryItem(name: "album_name", value: album)) }
-                    if duration > 0 { components.queryItems?.append(URLQueryItem(name: "duration", value: String(Int(duration)))) }
-                    var request = URLRequest(url: components.url!); request.timeoutInterval = 12
-                    let (data, response) = try await URLSession.shared.data(for: request)
-                    guard !Task.isCancelled, self.lyricsKey == key else { return }
-                    var row: [String: Any]?
-                    if (response as? HTTPURLResponse)?.statusCode == 200 { row = try? JSONSerialization.jsonObject(with: data) as? [String: Any] }
-                    if row == nil {
-                        components.path = "/api/search"
-                        components.queryItems = [URLQueryItem(name: "track_name", value: title), URLQueryItem(name: "artist_name", value: artist)]
-                        request.url = components.url
-                        let (searchData, _) = try await URLSession.shared.data(for: request)
-                        guard !Task.isCancelled, self.lyricsKey == key else { return }
-                        let rows = (try? JSONSerialization.jsonObject(with: searchData) as? [[String: Any]]) ?? []
-                        func normalized(_ text: String) -> String { text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current).trimmingCharacters(in: .whitespacesAndNewlines) }
-                        row = rows.filter {
-                            normalized($0["trackName"] as? String ?? "") == normalized(title)
-                                && normalized($0["artistName"] as? String ?? "") == normalized(artist)
-                                && (duration <= 0 || abs(($0["duration"] as? Double ?? -100) - duration) <= 5)
-                        }.sorted { ($0["syncedLyrics"] as? String) != nil && ($1["syncedLyrics"] as? String) == nil }.first
-                    }
-                    plain = row?["plainLyrics"] as? String ?? ""
-                    synced = Lyrics.parse(row?["syncedLyrics"] as? String ?? "").map { (time: $0.time, text: $0.text) }
-                } catch { /* The current song stays empty on offline / missing lyrics. */ }
+            if document.availability == .unavailable {
+                document = (try? await self.fetchNeteaseLyrics(title: title, artist: artist, duration: duration)) ?? LyricsDocument()
+                guard !Task.isCancelled, self.lyricsKey == key else { return }
+            }
+            if document.availability == .unavailable {
+                document = (try? await self.fetchLRCLIBLyrics(title: title, artist: artist, album: album, duration: duration)) ?? LyricsDocument()
             }
             guard !Task.isCancelled, self.lyricsKey == key else { return }
-            self.currentLyrics = plain; self.syncedLyrics = synced; self.isFetchingLyrics = false
-            if !plain.isEmpty || !synced.isEmpty {
+            self.applyLyrics(document)
+            if document.availability != .unavailable {
                 if self.lyricsCache.count >= 50 { self.lyricsCache.removeAll() }
-                self.lyricsCache[key] = (plain, synced)
+                self.lyricsCache[key] = document
             }
         }
     }
 
-    func lyricLine(at elapsed: Double) -> String {
-        Lyrics.line(at: elapsed, in: syncedLyrics.map { LyricLine(time: $0.time, text: $0.text) })
+    private func applyLyrics(_ document: LyricsDocument) {
+        lyricsDocument = document
+        currentLyrics = document.plain
+        isFetchingLyrics = false
+        if document.availability == .unavailable { lyricsFocusRequested = false }
     }
 
+    private func lyricsJSON(url: URL, netease: Bool = false) async throws -> Any {
+        var request = URLRequest(url: url)
+        request.timeoutInterval = netease ? 5 : 12
+        if netease {
+            request.setValue("https://music.163.com/", forHTTPHeaderField: "Referer")
+        }
+        let (data, response) = try await URLSession.shared.data(for: request)
+        try Task.checkCancellation()
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw URLError(.badServerResponse) }
+        return try JSONSerialization.jsonObject(with: data)
+    }
+
+    private func normalizedLyricMetadata(_ text: String) -> String {
+        text.folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func fetchNeteaseLyrics(title: String, artist: String, duration: Double) async throws -> LyricsDocument {
+        guard !artist.isEmpty else { return LyricsDocument() }
+        var search = URLComponents(string: "https://music.163.com/api/search/get/web")!
+        search.queryItems = [URLQueryItem(name: "s", value: title + " " + artist),
+                             URLQueryItem(name: "type", value: "1"), URLQueryItem(name: "limit", value: "10")]
+        let json = try await lyricsJSON(url: search.url!, netease: true) as? [String: Any]
+        let songs = (json?["result"] as? [String: Any])?["songs"] as? [[String: Any]] ?? []
+        // Never attach lyrics from a fuzzy title match or a different recording.
+        let song = songs.first { row in
+            let artists = row["artists"] as? [[String: Any]] ?? []
+            return normalizedLyricMetadata(row["name"] as? String ?? "") == normalizedLyricMetadata(title)
+                && artists.contains { normalizedLyricMetadata($0["name"] as? String ?? "") == normalizedLyricMetadata(artist) }
+                && (duration <= 0 || abs((row["duration"] as? Double ?? -100_000) / 1000 - duration) <= 5)
+        }
+        guard let id = song?["id"] as? Int else { return LyricsDocument() }
+        let url = URL(string: "https://music.163.com/api/song/lyric?id=\(id)&lv=-1&kv=-1&tv=-1&yv=-1")!
+        let row = try await lyricsJSON(url: url, netease: true) as? [String: Any] ?? [:]
+        return LyricsDocument.netease(row)
+    }
+
+    private func fetchLRCLIBLyrics(title: String, artist: String, album: String, duration: Double) async throws -> LyricsDocument {
+        var components = URLComponents(string: "https://lrclib.net/api/get")!
+        components.queryItems = [URLQueryItem(name: "track_name", value: title), URLQueryItem(name: "artist_name", value: artist)]
+        if !album.isEmpty { components.queryItems?.append(URLQueryItem(name: "album_name", value: album)) }
+        if duration > 0 { components.queryItems?.append(URLQueryItem(name: "duration", value: String(Int(duration)))) }
+        if let row = try? await lyricsJSON(url: components.url!) as? [String: Any] {
+            return LyricsDocument.lrclib(row)
+        }
+        try Task.checkCancellation()
+        components.path = "/api/search"
+        components.queryItems = [URLQueryItem(name: "track_name", value: title), URLQueryItem(name: "artist_name", value: artist)]
+        let rows = try await lyricsJSON(url: components.url!) as? [[String: Any]] ?? []
+        let row = rows.filter {
+            normalizedLyricMetadata($0["trackName"] as? String ?? "") == normalizedLyricMetadata(title)
+                && normalizedLyricMetadata($0["artistName"] as? String ?? "") == normalizedLyricMetadata(artist)
+                && (duration <= 0 || abs(($0["duration"] as? Double ?? -100) - duration) <= 5)
+        }.sorted { ($0["syncedLyrics"] as? String) != nil && ($1["syncedLyrics"] as? String) == nil }.first
+        return LyricsDocument.lrclib(row ?? [:])
+    }
 
     private func triggerFlipAnimation() {
         // Cancel any existing animation
@@ -561,8 +614,11 @@ class MusicManager: ObservableObject {
     }
 
     func seek(to position: TimeInterval) {
+        let target = min(max(0, position), songDuration)
+        elapsedTime = target
+        timestampDate = Date()
         Task {
-            await activeController?.seek(to: position)
+            await activeController?.seek(to: target)
         }
     }
     func skip(seconds: TimeInterval) {

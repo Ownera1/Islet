@@ -16,6 +16,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Scroll gesture regression tests
         run: ./scripts/test-pan-gesture.sh
+      - name: Update feed policy tests
+        run: python3 scripts/test-update-pipeline.py
       - name: Integration tests
         run: swift test --package-path Packages/NotchIntegrations --scratch-path build/IntegrationPackage
       - name: Universal Release build

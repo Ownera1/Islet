@@ -16,8 +16,14 @@
 		<dict/>
 	</array>
 	<key>SUEnableAutomaticChecks</key>
-	<false/>
+	<true/>
 	<key>SUAutomaticallyUpdate</key>
 	<false/>
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/Ownera1/agent-usage-notch/main/updater/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>rylBh3FVpqv63/rLrxpPUf9VdQKXFvE5yDp3tLMxS7U=</string>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

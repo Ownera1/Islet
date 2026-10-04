@@ -1,0 +1,79 @@
+name: Publish signed macOS release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+concurrency:
+  group: macos-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Validate release configuration
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: |
+          test -n "$SPARKLE_PRIVATE_KEY" || { echo 'Configure SPARKLE_PRIVATE_KEY before releasing.' >&2; exit 1; }
+          python3 - <<'PY'
+          import os, pathlib, plistlib, subprocess
+          subprocess.run(['plutil', '-convert', 'xml1', '-o', '/tmp/project.plist', 'boringNotch.xcodeproj/project.pbxproj'], check=True)
+          project = plistlib.loads(pathlib.Path('/tmp/project.plist').read_bytes())
+          versions = {o['buildSettings']['MARKETING_VERSION'] for o in project['objects'].values()
+                      if 'MARKETING_VERSION' in o.get('buildSettings', {})}
+          assert versions == {os.environ['GITHUB_REF_NAME'].removeprefix('v')}, 'Tag must match every bundle version'
+          subprocess.run(['git', 'merge-base', '--is-ancestor', 'HEAD', 'origin/main'], check=True)
+          PY
+      - name: Regression tests
+        run: |
+          ./scripts/test-pan-gesture.sh
+          python3 scripts/test-update-pipeline.py
+          swift test --package-path Packages/NotchIntegrations --scratch-path build/IntegrationPackage
+      - name: Universal Release build
+        run: ./scripts/build-app.sh Release 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
+      - name: Package and verify DMG and ZIP
+        run: ./scripts/package-release.sh
+      - name: Retrieve prior archive and current feed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch origin main
+          git show origin/main:updater/appcast.xml > updater/appcast.xml
+          mkdir -p build/update-archives
+          gh release list --repo "$GITHUB_REPOSITORY" --exclude-drafts --exclude-pre-releases --limit 1 --json tagName --jq '.[0].tagName // ""' > /tmp/prior-tag
+          PRIOR_TAG=$(cat /tmp/prior-tag)
+          if [ -n "$PRIOR_TAG" ] && [ "$PRIOR_TAG" != "$GITHUB_REF_NAME" ]; then
+            gh release view "$PRIOR_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' > /tmp/prior-assets
+            if rg -q '\.zip$' /tmp/prior-assets; then
+              gh release download "$PRIOR_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.zip' --dir build/update-archives
+            fi
+          fi
+      - name: Sign update archives and generate appcast and deltas
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: ./scripts/generate-appcast.sh "$GITHUB_REF_NAME"
+      - name: Create draft Release and upload artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Agent Usage Notch ${GITHUB_REF_NAME#v}" --notes-file "updater/release-notes/$GITHUB_REF_NAME.md"
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/*
+      - name: Make release assets available
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
+      - name: Publish feed after release assets are available
+        run: |
+          git fetch origin main
+          git restore updater/appcast.xml
+          git switch --detach origin/main
+          cp dist/appcast.xml updater/appcast.xml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add updater/appcast.xml
+          git commit -m "Publish signed appcast for $GITHUB_REF_NAME"
+          git push origin HEAD:main

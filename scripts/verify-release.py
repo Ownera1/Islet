@@ -30,7 +30,12 @@ for path in paths:
 assert (app / 'Contents/Resources/IntegrationResources/boringnotch-pi.ts').is_file()
 assert (app / 'Contents/Resources/LICENSE').is_file()
 assert (app / 'Contents/Resources/THIRD_PARTY_LICENSES').is_file()
-assert 'SUFeedURL' not in info, 'Upstream update feed must not replace this integration'
+assert info['SUFeedURL'] == 'https://raw.githubusercontent.com/Ownera1/agent-usage-notch/main/updater/appcast.xml'
+assert info['SUPublicEDKey'] == plistlib.loads((root / 'boringNotch/Info.plist').read_bytes())['SUPublicEDKey']
+assert info.get('SUEnableAutomaticChecks') is True
+assert info.get('SUVerifyUpdateBeforeExtraction') is True
+assert info.get('SUEnableInstallerLauncherService') is True
+assert (app / 'Contents/Frameworks/Sparkle.framework').exists()
 helper = plistlib.loads((app / 'Contents/XPCServices/BoringNotchXPCHelper.xpc/Contents/Info.plist').read_bytes())
 assert helper['CFBundleIdentifier'] == 'com.ownera1.agentusagenotch.helper'
 revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
@@ -45,6 +50,7 @@ manifest = {
     'sourceCommit': revision, 'repository': 'https://github.com/Ownera1/agent-usage-notch',
     'architectures': ['arm64', 'x86_64'], 'minimumMacOS': '15.0',
     'signature': 'ad-hoc', 'notarized': False,
+    'updateFeed': info['SUFeedURL'], 'updateSigning': 'Ed25519',
     'appSandbox': True, 'hardenedRuntime': False, 'debuggerAccess': False,
     'installer': dmg.name, 'size': dmg.stat().st_size,
     'sha256': digest.hexdigest(),

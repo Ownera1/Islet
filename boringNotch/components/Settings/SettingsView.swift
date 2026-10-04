@@ -605,6 +605,7 @@ struct Media: View {
     @Default(.sneakPeekStyles) var sneakPeekStyles
 
     @Default(.enableLyrics) var enableLyrics
+    @Default(.lyricsTimeOffset) private var lyricsTimeOffset
 
     var body: some View {
         Form {
@@ -686,10 +687,25 @@ struct Media: View {
                 MusicSlotConfigurationView()
                 Defaults.Toggle(key: .enableLyrics) {
                     HStack {
-                        Text("Show lyrics below artist name")
+                        Text("显示播放歌词")
                         customBadge(text: "Beta")
                     }
                 }
+                Defaults.Toggle(key: .autoLyricsFocusWhenCalendarEmpty) {
+                    Text("日程为空时自动进入歌词专注模式")
+                }
+                .disabled(!enableLyrics)
+                Stepper(value: $lyricsTimeOffset, in: -10...10, step: 0.1) {
+                    HStack {
+                        Text("歌词时间偏移")
+                        Spacer()
+                        Text("\(lyricsTimeOffset, specifier: "%+.1f") 秒")
+                            .monospacedDigit().foregroundStyle(.secondary)
+                    }
+                }
+                .disabled(!enableLyrics)
+                Text("正值让歌词提前，负值让歌词延后；普通 LRC 扫光为估算。")
+                    .font(.caption).foregroundStyle(.secondary)
             } header: {
                 Text("Media controls")
             }  footer: {
