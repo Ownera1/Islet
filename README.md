@@ -1,3 +1,5 @@
+<img src="boringNotch/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="96" height="96" alt="Agent Usage Notch 图标">
+
 # Agent Usage Notch
 
 基于 [boring.notch](https://github.com/TheBoredTeam/boring.notch) 的原生 macOS 刘海应用，集成 [CodeIsland](https://github.com/wxtsky/CodeIsland) 的 Agent 会话监控、订阅剩余量和音乐歌词。
@@ -6,12 +8,14 @@
 
 ## 安装
 
-从 [GitHub Releases](https://github.com/Ownera1/agent-usage-notch/releases) 下载 DMG，将 `Agent Usage Notch.app` 拖入“应用程序”。仓库为私有，下载需要有访问权限的 GitHub 登录。
+从 [最新 GitHub Release](https://github.com/Ownera1/agent-usage-notch/releases/latest) 下载 DMG，将 `Agent Usage Notch.app` 拖入“应用程序”。本仓库已公开，源码和安装包均可直接访问，无需 GitHub 登录。
 
 - macOS **15 或更新版本**。
 - 通用二进制包含 **Apple Silicon / Intel**。实机运行验证使用 Apple Silicon。
 - 当前发行包使用本地签名，**尚未经过 Apple 公证**。首次打开可能需要在“系统设置 → 隐私与安全性”允许。
 - 此集成版有独立应用标识和设置，更新通过本仓库 Release 下载。
+
+`v0.1.1` 使用新的“极简终端”应用图标：暖白底色、黑色刘海、终端符号和珊瑚红状态点。Dock、首次引导和设置中的图标预览保持一致。
 
 具体步骤见 [INSTALL.md](INSTALL.md)。
 

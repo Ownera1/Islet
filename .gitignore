@@ -61,5 +61,6 @@ build/
 .DS_Store
 dist/
 __pycache__/
+design/icon-options/
 
 !boringNotch.xcodeproj/xcshareddata/xcschemes/*.xcscheme
