@@ -21614,6 +21614,29 @@
         }
       }
     },
+    "Swipe up with two fingers on the top navigation area to close. Content areas only scroll. Swipe down on the closed notch to open when **Open notch on hover** is disabled." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Swipe up with two fingers on the top navigation area to close. Content areas only scroll. Swipe down on the closed notch to open when **Open notch on hover** is disabled."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在顶部导航区域双指上滑可收起刘海；内容区域内上下滑动仅滚动内容。关闭**悬停时打开刘海**后，可在收起的刘海上双指下滑展开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在頂部導覽區域雙指上滑可收起瀏海；內容區域內上下滑動僅捲動內容。關閉**懸停時打開瀏海**後，可在收起的瀏海上雙指下滑展開。"
+          }
+        }
+      }
+    },
     "Two-finger swipe up on notch to close, two-finger swipe down on notch to open when **Open notch on hover** option is disabled" : {
       "localizations" : {
         "ar" : {

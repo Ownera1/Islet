@@ -34,6 +34,76 @@ extension View {
     }
 }
 
+struct ScrollPanUpdate {
+    let translation: CGFloat
+    let phase: NSEvent.Phase
+}
+
+/// A scroll sequence belongs to the region where it started. Inertia never
+/// starts a notch gesture, including after the pointer moves out of a list.
+struct ScrollPanState {
+    let direction: PanDirection
+    let threshold: CGFloat
+    private(set) var isTracking = false
+    private var startsInside = false
+    private var accumulated: CGFloat = 0
+    private var active = false
+
+    mutating func finish() -> ScrollPanUpdate? {
+        let update = active ? ScrollPanUpdate(translation: 0, phase: .ended) : nil
+        isTracking = false
+        startsInside = false
+        accumulated = 0
+        active = false
+        return update
+    }
+
+    mutating func update(
+        deltaX: CGFloat,
+        deltaY: CGFloat,
+        precise: Bool,
+        phase: NSEvent.Phase,
+        momentumPhase: NSEvent.Phase,
+        insideRegion: Bool
+    ) -> [ScrollPanUpdate] {
+        var updates: [ScrollPanUpdate] = []
+        if !momentumPhase.isEmpty {
+            if let end = finish() { updates.append(end) }
+            return updates
+        }
+        if phase.contains(.began) {
+            if let end = finish() { updates.append(end) }
+        }
+        if phase.contains(.ended) || phase.contains(.cancelled) {
+            if let end = finish() { updates.append(end) }
+            return updates
+        }
+        if !isTracking {
+            isTracking = true
+            startsInside = insideRegion
+        }
+        guard startsInside else { return updates }
+
+        let absDX = abs(deltaX)
+        let absDY = abs(deltaY)
+        let axisDominant = direction.isHorizontal
+            ? absDX >= 1.5 * absDY
+            : absDY >= 1.5 * absDX
+        guard axisDominant else { return updates }
+
+        let delta = direction.signed(deltaX: deltaX, deltaY: deltaY) * (precise ? 1 : 8)
+        guard delta.magnitude > 0.2 else { return updates }
+        accumulated = delta > 0 ? accumulated + delta : 0
+        if !active && accumulated >= threshold {
+            active = true
+            updates.append(ScrollPanUpdate(translation: accumulated, phase: .began))
+        } else if active {
+            updates.append(ScrollPanUpdate(translation: accumulated, phase: .changed))
+        }
+        return updates
+    }
+}
+
 private struct ScrollMonitor: NSViewRepresentable {
     let direction: PanDirection
     let threshold: CGFloat
@@ -52,18 +122,13 @@ private struct ScrollMonitor: NSViewRepresentable {
     }
 
     @MainActor final class Coordinator: NSObject {
-        private let direction: PanDirection
-        private let threshold: CGFloat
         private let action: (CGFloat, NSEvent.Phase) -> Void
         private var monitor: Any?
-        private var accumulated: CGFloat = 0
-        private var active = false
-            private var endTask: Task<Void, Never>?
-        private let noiseThreshold: CGFloat = 0.2
+        private var state: ScrollPanState
+        private var endTask: Task<Void, Never>?
 
         init(direction: PanDirection, threshold: CGFloat, action: @escaping (CGFloat, NSEvent.Phase) -> Void) {
-            self.direction = direction
-            self.threshold = threshold
+            self.state = ScrollPanState(direction: direction, threshold: threshold)
             self.action = action
         }
 
@@ -71,24 +136,21 @@ private struct ScrollMonitor: NSViewRepresentable {
             // Cancel any existing scheduled end and schedule a new one.
             endTask?.cancel()
             endTask = Task { @MainActor in
-                // If no new scroll event arrives within this window, consider the gesture ended.
+                // Mouse wheels have no phases; end their sequence after a quiet interval.
                 try? await Task.sleep(for: .milliseconds(300))
                 guard !Task.isCancelled else { return }
-                if active {
-                    action(accumulated.magnitude, .ended)
-                } else {
-                    action(0, .ended)
+                if let end = state.finish() {
+                    action(end.translation, end.phase)
                 }
-                active = false
-                accumulated = 0
             }
         }
 
         func installMonitor(on view: NSView) {
             removeMonitor()
             monitor = NSEvent.addLocalMonitorForEvents(matching: [.scrollWheel]) { [weak self, weak view] event in
-                guard let self = self, event.window === view?.window else { return event }
-                self.handleScroll(event)
+                guard let self, let view, let window = view.window,
+                      event.window === window else { return event }
+                self.handleScroll(event, on: view)
                 return event
             }
         }
@@ -98,48 +160,29 @@ private struct ScrollMonitor: NSViewRepresentable {
                 NSEvent.removeMonitor(monitor)
                 self.monitor = nil
             }
-            accumulated = 0
-            active = false
+            _ = state.finish()
             endTask?.cancel()
             endTask = nil
         }
 
-        private func handleScroll(_ event: NSEvent) {
-            if event.phase == .ended || event.momentumPhase == .ended {
-                if active {
-                    action(accumulated.magnitude, .ended)
-                } else {
-                    action(0, .ended)
-                }
-                active = false
-                accumulated = 0
-                return
+        private func handleScroll(_ event: NSEvent, on view: NSView) {
+            endTask?.cancel()
+            endTask = nil
+            let location = view.convert(event.locationInWindow, from: nil)
+            let updates = state.update(
+                deltaX: event.scrollingDeltaX,
+                deltaY: event.scrollingDeltaY,
+                precise: event.hasPreciseScrollingDeltas,
+                phase: event.phase,
+                momentumPhase: event.momentumPhase,
+                insideRegion: view.bounds.contains(location)
+            )
+            for update in updates {
+                action(update.translation, update.phase)
             }
-
-            // Only consider scroll events that are primarily along the configured axis.
-            let absDX = abs(event.scrollingDeltaX)
-            let absDY = abs(event.scrollingDeltaY)
-            // Require the movement along the gesture axis to be at least 1.5x the orthogonal axis.
-            let axisDominanceFactor: CGFloat = 1.5
-            let isAxisDominant: Bool = direction.isHorizontal ? (absDX >= axisDominanceFactor * absDY) : (absDY >= axisDominanceFactor * absDX)
-            guard isAxisDominant else { return }
-
-            // Scale non-precise (mouse wheel) scrolling deltas so they feel similar to
-            // trackpad gestures.
-            let raw = direction.signed(deltaX: event.scrollingDeltaX, deltaY: event.scrollingDeltaY)
-            let scale: CGFloat = event.hasPreciseScrollingDeltas ? 1 : 8
-            let s = raw * scale
-            guard s.magnitude > noiseThreshold else { return }
-            accumulated = s > 0 ? accumulated + s : 0
-
-            if !active && accumulated >= threshold {
-                active = true
-                action(accumulated.magnitude, .began)
-            } else if active {
-                action(accumulated.magnitude, .changed)
+            if event.phase.isEmpty && event.momentumPhase.isEmpty && state.isTracking {
+                scheduleEndTimeout()
             }
-            // Schedule a timeout to end the gesture if no further scroll events arrive.
-            scheduleEndTimeout()
         }
     }
 }

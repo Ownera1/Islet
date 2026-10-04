@@ -315,7 +315,7 @@ struct GeneralSettings: View {
             }
         } footer: {
             Text(
-                "Two-finger swipe up on notch to close, two-finger swipe down on notch to open when **Open notch on hover** option is disabled"
+                "Swipe up with two fingers on the top navigation area to close. Content areas only scroll. Swipe down on the closed notch to open when **Open notch on hover** is disabled."
             )
             .multilineTextAlignment(.trailing)
             .foregroundStyle(.secondary)

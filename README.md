@@ -17,6 +17,8 @@
 
 `v0.1.1` 使用新的“极简终端”应用图标：暖白底色、黑色刘海、终端符号和珊瑚红状态点。Dock、首次引导和设置中的图标预览保持一致。
 
+`v0.1.2` 修复内容滚动误收起刘海的问题：在订阅卡片、Agent 回复等内容区域上下滑动可正常浏览；上滑收起手势仅在顶部导航区域开始时生效，滚动惯性不会触发收起。
+
 具体步骤见 [INSTALL.md](INSTALL.md)。
 
 ## 功能
@@ -41,6 +43,8 @@ Gemini 当前读取 CLI / Code Assist 配额，OpenAI 当前读取 Codex 配额�
 ./scripts/build-app.sh
 # 集成测试
 swift test --package-path Packages/NotchIntegrations --scratch-path build/IntegrationPackage
+# 滚动与收起手势回归测试
+./scripts/test-pan-gesture.sh
 # 通用 Release 构建
 ./scripts/build-app.sh Release 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 # 在已提交且干净的源码树上打包、验签、生成 SHA-256 和发布清单
