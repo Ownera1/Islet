@@ -155,9 +155,10 @@ struct ContentView: View {
                         }
                     }
                     .onChange(of: vm.notchState) { _, newState in
-                        if newState == .closed && isHovering {
+                        if newState == .closed {
                             withAnimation {
                                 isHovering = false
+                                gestureProgress = .zero
                             }
                         }
                     }
