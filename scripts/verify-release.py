@@ -40,6 +40,7 @@ assert info.get('SUEnableInstallerLauncherService') is True
 assert (app / 'Contents/Frameworks/Sparkle.framework').exists()
 helper = plistlib.loads((app / 'Contents/XPCServices/BoringNotchXPCHelper.xpc/Contents/Info.plist').read_bytes())
 assert helper['CFBundleIdentifier'] == 'com.ownera1.agentusagenotch.helper'
+assert helper.get('XPCService', {}).get('JoinExistingSession') is True, 'Helper must join the login session to read CLI keychain credentials'
 revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
 assert not subprocess.check_output(['git', 'status', '--porcelain'], cwd=root, text=True).strip(), 'Commit the released source before packaging'
 with dmg.open('rb') as stream:

@@ -82,7 +82,8 @@ enum AntigravityUsageClient {
         } catch {
             try Task.checkCancellation()
             throw AntigravitySharedUsageError(
-                cli: failureSummary(cliFailure), application: failureSummary(error)
+                cli: failureSummary(cliFailure), application: failureSummary(error),
+                cliCredentialAccessDenied: (cliFailure as? AntigravityUsageError) == .credentialAccessDenied
             )
         }
     }
@@ -96,6 +97,7 @@ enum AntigravityUsageClient {
             case .cliNotInstalled: return "未检测到 agy CLI"
             case .unsupportedCLI: return "需要 agy 1.1.11 或更新的稳定版本"
             case .authenticationRequired: return "未登录或登录已失效"
+            case .credentialAccessDenied: return "无法访问已保存的登录凭据（钥匙串）"
             case .timedOut: return "读取超时"
             case .backgroundUnavailable: return "无法在后台安全读取"
             case .oversized: return "用量报告过大"
@@ -185,8 +187,12 @@ enum AntigravityUsageClient {
 struct AntigravitySharedUsageError: LocalizedError {
     let cli: String
     let application: String
+    let cliCredentialAccessDenied: Bool
     var errorDescription: String? {
-        "无法读取共享额度。\nagy CLI：\(cli)\nAntigravity：\(application)\n请手动运行 agy 登录，或打开已登录的 Antigravity，再刷新。"
+        let recovery = cliCredentialAccessDenied
+            ? "请重启 Islet 后重试，或打开已登录的 Antigravity，再刷新。"
+            : "请手动运行 agy 登录，或打开已登录的 Antigravity，再刷新。"
+        return "无法读取共享额度。\nagy CLI：\(cli)\nAntigravity：\(application)\n\(recovery)"
     }
 }
 
@@ -206,14 +212,15 @@ private final class AntigravityLoopbackDelegate: NSObject, URLSessionDelegate, U
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest) async -> URLRequest? { nil }
 }
 
-enum AntigravityUsageError: LocalizedError {
-    case cliNotInstalled, unsupportedCLI, failed, timedOut, oversized, authenticationRequired, backgroundUnavailable
+enum AntigravityUsageError: LocalizedError, Equatable {
+    case cliNotInstalled, unsupportedCLI, failed, timedOut, oversized, authenticationRequired, credentialAccessDenied, backgroundUnavailable
     var errorDescription: String? {
         switch self {
         case .cliNotInstalled: return "未检测到 agy CLI，请安装后刷新用量。"
         case .unsupportedCLI: return "读取用量需要 agy 1.1.11 或更新版本，请更新 Antigravity CLI。"
         case .failed: return "无法读取 agy CLI 配额，请确认已登录后刷新用量。"
         case .authenticationRequired: return "agy CLI 未登录或登录已失效，请在终端手动运行 agy 登录后刷新。"
+        case .credentialAccessDenied: return "无法访问 agy CLI 已保存的登录凭据，请重启 Islet 后重试。"
         case .backgroundUnavailable: return "系统无法安全地在后台读取 agy CLI 配额，请稍后重试。"
         case .timedOut: return "Antigravity 配额读取超时，稍后自动重试。"
         case .oversized: return "Antigravity 用量报告超过大小限制。"

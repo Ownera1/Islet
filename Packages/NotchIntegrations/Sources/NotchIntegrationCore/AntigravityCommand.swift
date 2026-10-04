@@ -107,8 +107,8 @@ private final class RunningCommand: @unchecked Sendable {
             timer.schedule(deadline: .now(), repeating: .milliseconds(200))
             timer.setEventHandler { [self] in
                 trackDescendants()
-                if interactiveLoginStarted { abort(AntigravityUsageError.authenticationRequired); return }
-                if Date() >= deadline { abort(authenticationFailed ? AntigravityUsageError.authenticationRequired : AntigravityUsageError.timedOut) }
+                if interactiveLoginStarted { abort(authenticationFailure); return }
+                if Date() >= deadline { abort(authenticationFailed ? authenticationFailure : AntigravityUsageError.timedOut) }
             }
             self.timer = timer; timer.resume()
         }
@@ -150,7 +150,15 @@ private final class RunningCommand: @unchecked Sendable {
         guard exited, outputEnded, diagnosticsEnded else { return }
         if let error { complete(.failure(error)) }
         else if process.terminationStatus == 0 { complete(.success(bytes)) }
-        else { complete(.failure(authenticationFailed ? AntigravityUsageError.authenticationRequired : AntigravityUsageError.failed)) }
+        else { complete(.failure(authenticationFailed ? authenticationFailure : AntigravityUsageError.failed)) }
+    }
+    private var authenticationFailure: AntigravityUsageError {
+        let message = diagnosticMessage
+        // macOS security exits with the low byte of errSecInteractionNotAllowed
+        // (-25308 = exit 36) when the helper cannot access the login keychain.
+        let keyringDenied = message.contains("failed to load stored token from keyring") && message.contains("exit status 36")
+        return keyringDenied || message.contains("errsecinteractionnotallowed") || message.contains("user interaction is not allowed")
+            ? .credentialAccessDenied : .authenticationRequired
     }
     private var authenticationFailed: Bool {
         let message = String(decoding: diagnostics, as: UTF8.self).lowercased()

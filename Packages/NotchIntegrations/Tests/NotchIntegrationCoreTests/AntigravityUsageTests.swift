@@ -137,6 +137,54 @@ final class AntigravityUsageTests: XCTestCase {
         } catch AntigravityUsageError.timedOut {}
     }
 
+    func testKeychainAccessFailureIsNotReportedAsLoggedOut() async throws {
+        let home = try directory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let diagnostics = home.appendingPathComponent("usage.log")
+        let probe = home.appendingPathComponent("probe")
+        try executable(probe, script: #"""
+        printf 'Failed to load stored token from keyring, falling back to file: exit status 36\nPrint mode: silent auth failed\nStarting OAuth authentication flow\n' > "$1"
+        exec /bin/sleep 10
+        """#)
+        let start = Date()
+        do {
+            _ = try await AntigravityCommand.run(probe.path, arguments: [diagnostics.path], directory: home, home: home.path, timeout: 5, limit: 100, diagnosticsFile: diagnostics)
+            XCTFail("Keychain access failure must stop before interactive OAuth")
+        } catch AntigravityUsageError.credentialAccessDenied {}
+        XCTAssertLessThan(Date().timeIntervalSince(start), 3)
+    }
+
+    func testSuccessfulCredentialFallbackStillReturnsQuotaAfterKeychainFailure() async throws {
+        let home = try directory()
+        defer { try? FileManager.default.removeItem(at: home) }
+        let diagnostics = home.appendingPathComponent("usage.log")
+        let probe = home.appendingPathComponent("probe")
+        try executable(probe, script: #"""
+        printf 'Failed to load stored token from keyring, falling back to file: exit status 36\nPrint mode: silent auth succeeded\n' > "$1"
+        printf 'quota-report\n'
+        """#)
+        let report = try await AntigravityCommand.run(probe.path, arguments: [diagnostics.path], directory: home, home: home.path, timeout: 3, limit: 100, diagnosticsFile: diagnostics)
+        XCTAssertEqual(String(decoding: report, as: UTF8.self), "quota-report\n")
+    }
+
+    func testKeychainFailureReminderRecommendsRestartInsteadOfLoggingInAgain() async throws {
+        do {
+            _ = try await AntigravityUsageClient.fetch(cli: {
+                throw AntigravityUsageError.credentialAccessDenied
+            }, application: {
+                throw UsageError.login(.antigravity)
+            })
+            XCTFail("Unavailable credentials must return a specific reminder")
+        } catch let error as AntigravitySharedUsageError {
+            let text = error.localizedDescription
+            XCTAssertTrue(text.contains("无法访问已保存的登录凭据（钥匙串）"))
+            XCTAssertTrue(text.contains("请重启 Islet 后重试"))
+            XCTAssertFalse(text.contains("未登录或登录已失效"))
+            XCTAssertFalse(text.contains("请手动运行 agy 登录"))
+            XCTAssertFalse(text.contains("https://"))
+        }
+    }
+
     func testSharedQuotaUsesCLIWithoutReadingOrAddingApplicationQuota() async throws {
         let calls = SourceCalls()
         let cli = snapshot(usedPercent: 20)
@@ -162,6 +210,7 @@ final class AntigravityUsageTests: XCTestCase {
             AntigravityUsageError.cliNotInstalled,
             AntigravityUsageError.unsupportedCLI,
             AntigravityUsageError.authenticationRequired,
+            AntigravityUsageError.credentialAccessDenied,
             AntigravityUsageError.timedOut,
             AntigravityUsageError.backgroundUnavailable,
             UsageError.invalid

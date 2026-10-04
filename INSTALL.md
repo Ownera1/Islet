@@ -6,7 +6,7 @@
 2. 将其中的应用拖到 `Applications`。新版本名称为 `Islet.app`，历史安装包仍使用 `Agent Usage Notch.app`。
 3. 从“应用程序”启动。此版本使用本地签名，尚未经过 Apple 公证。如被系统阻止，请到“系统设置 → 隐私与安全性”查看并允许打开你刚下载的应用。
 4. 完成首次引导。需要 Agent 连接时，进入“设置 → Agent 与订阅”，安装对应连接；Codex 还需运行 `/hooks` 审核。
-5. 在“刘海中的订阅可见性”分别选择 Claude、OpenAI、Gemini、Antigravity 的剩余量是否显示。
+5. 在“刘海中的订阅可见性”分别选择 Claude、OpenAI、Google AI 的剩余量是否显示。Google AI 合并 agy CLI 与 Antigravity 的共享额度，优先读取 CLI，失败后读取已运行的 Antigravity；Gemini CLI 不参与。
 
 设置也可从应用菜单或菜单栏图标打开，快捷键为 `⌘,`。
 

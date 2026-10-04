@@ -27,7 +27,7 @@ Gemini CLI 的旧数据解析保留兼容，但不进入当前额度页面或后
 
 登录凭据只在辅助进程及 CLI 内读取和使用，不复制进本应用、不写入本应用设置、不打印凭据。Antigravity 本地 HTTPS 只允许连接同一用户进程拥有的 `127.0.0.1` 端口，使用其 CSRF token，拒绝重定向；网络订阅请求保持正常 TLS 校验。
 
-主应用保留 App Sandbox。文件和 CLI 操作在 boring.notch 原有的 XPC Helper 内执行。Agent 通过权限为 0600 的 `/tmp/boringnotch-用户ID/agent.sock` 通信；桥接程序安装到 `~/.boringnotch/notch-agent-bridge`，Pi 扩展安装到 `~/.pi/agent/extensions/boringnotch.ts`。
+主应用保留 App Sandbox。文件和 CLI 操作在 boring.notch 原有的 XPC Helper 内执行。Helper 设置 `XPCService.JoinExistingSession = true`，加入调用者的登录安全会话，让其启动的 agy 能读取已有钥匙串凭据；不修改钥匙串权限，也不复制 token。钥匙串访问失败单独提示，不误报为未登录。禁止网页跳转的 CLI 子进程沙箱继续生效。Agent 通过权限为 0600 的 `/tmp/boringnotch-用户ID/agent.sock` 通信；桥接程序安装到 `~/.boringnotch/notch-agent-bridge`，Pi 扩展安装到 `~/.pi/agent/extensions/boringnotch.ts`。
 
 ## 构建与测试
 
@@ -56,7 +56,9 @@ python3 scripts/smoke-agents.py --cleanup
 
 ### 订阅修复
 
-136 项 Swift Package 测试通过，覆盖 CLI 优先且成功后不再访问应用、CLI 各类失败后按顺序回退、空配额不伪造零用量、双来源失败文字提醒、取消不回退，以及 agy 检测、版本门槛、XPC 新旧数据兼容、浏览器和子进程应用启动拦截、OAuth 提前停止、网络超时与登录失败区分。Debug 应用和 Helper 已编译通过。实际界面已确认只有一张 Google AI 卡片、一个 Google AI 显示开关，没有 Google 网页跳转按钮；本机 CLI 登录不可用且应用未运行时，完整显示双来源失败原因与手动登录提醒。真实启动中已观察到 agy 登录回退的 `open` 调用被系统沙箱拒绝。本机真实 CLI 配额尚未成功返回，未把未返回的额度判为零。
+139 项 Swift Package 测试通过，覆盖 CLI 优先且成功后不再访问应用、CLI 各类失败后按顺序回退、空配额不伪造零用量、双来源失败文字提醒、取消不回退，以及 agy 检测、版本门槛、XPC 新旧数据兼容、浏览器和子进程应用启动拦截、OAuth 提前停止、网络超时与登录失败区分。新增回归检查钥匙串访问失败不会被误报为未登录，也不会阻断成功的凭据回退。另通过 8 项滚动手势测试、12 项表面渲染检查和 3 项更新源策略测试。
+
+0.1.4 的 Debug 应用和 Helper 已编译通过。Apple Silicon 实机验证：修复前终端沙箱查询成功，而真实 XPC 查询因钥匙串 `exit status 36` 失败；Helper 加入用户登录安全会话并重启后，真实应用通过 XPC 成功读取 agy 1.2.16 的 2 组、4 个额度窗口，界面显示“来源：agy CLI”、剩余百分比和重置时间。只显示一张 Google AI 卡片，没有 Google 网页跳转按钮。此前已验证双来源失败时完整显示文字提醒，agy 登录回退的 `open` 调用被系统沙箱拒绝。发布包校验额外要求 Helper 的 `JoinExistingSession` 为 true，避免该配置在打包时遗漏。
 
 ### 此前的集成验证
 
