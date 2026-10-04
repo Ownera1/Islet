@@ -26,7 +26,7 @@ final class SubscriptionMonitor: ObservableObject {
         let codexHome = AgentInstaller.shared.codexHome
         refreshTask = Task { [weak self] in
             await withTaskGroup(of: (SubscriptionProvider, SubscriptionUsage?, String?).self) { group in
-                for provider in SubscriptionProvider.allCases {
+                for provider in SubscriptionProvider.monitoredProviders {
                     group.addTask {
                         let result = await IntegrationServiceClient.shared.fetchUsage(provider, claudeHome: claudeHome, codexHome: codexHome)
                         return (provider, result.0, result.1)

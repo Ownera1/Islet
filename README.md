@@ -29,13 +29,13 @@
 
 - Agent：Pi、Codex、Claude Code、ZCode、Antigravity。多会话状态、工具调用、任务进度、最近提问、Markdown 回复、来源窗口跳转。
 - 一次性工具审批和问题回答。Antigravity 当前为观察模式，审批仍由原应用处理。
-- Claude、OpenAI、Gemini、Antigravity 四种配额来源。每 5 分钟同步，显示剩余百分比、重置时间和数据更新时间。
-- 设置中的四个独立可见性开关，立即生效并持久保存；隐藏卡片不影响后台同步。
+- Claude、OpenAI、Google AI 三张额度卡片。Google AI 将 agy CLI 与 Antigravity 作为同一个共享额度池，每 5 分钟同步，显示剩余百分比、重置时间、读取来源和数据更新时间。
+- 设置中的三个独立可见性开关，立即生效并持久保存；隐藏卡片不影响后台同步。
 - Apple Music 自带歌词优先，缺失时严格匹配网易云歌曲并回退到 LRCLIB。支持 YRC／增强 LRC 逐字时间与普通 LRC 行级扫光，切歌取消旧查询。
 - Home 显示当前歌词和下一句预告；引号按钮切换歌词专注模式，日历保留原状态。专注歌词可点击跳转，手动滚动后 4 秒恢复跟随，设置中可微调时间偏移。
 - 保留 boring.notch 的原生主页、媒体控制、日历、暂存器和隔空投送等功能。
 
-Gemini 当前读取 CLI / Code Assist 配额，OpenAI 当前读取 Codex 配额；不代表网页聊天中所有模型的限制。Gemini 与 Antigravity 独立读取。未登录、过期和服务错误均显示明确状态。
+OpenAI 当前读取 Codex 配额；不代表网页聊天中所有模型的限制。Google AI 优先自动检测并静默读取 agy CLI，失败后读取已运行的 Antigravity 应用；同一共享池只展示一份额度，不相加或平均。Gemini CLI 不参与额度页面或后台轮询。两种 Google 来源均不可用时只显示文字提醒，Google AI 卡片不提供网页跳转。订阅卡片各自的显示开关在设置中保留。
 
 首次使用 Agent 请到 **设置 → Agent 与订阅** 安装对应连接；配置会先备份并保留其他 Hook。详细来源、范围和验证边界见 [INTEGRATION.md](INTEGRATION.md)。
 

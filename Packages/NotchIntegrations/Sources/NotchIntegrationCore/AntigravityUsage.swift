@@ -31,7 +31,9 @@ public enum AntigravityUsageParser {
             }
         }
         guard !windows.isEmpty else { throw UsageError.unavailable }
-        return SubscriptionUsage(provider: .antigravity, plan: nil, windows: windows, fetchedAt: now)
+        let plan = (payload["planInfo"] as? [String: Any])?["planName"] as? String
+            ?? payload["planName"] as? String
+        return SubscriptionUsage(provider: .antigravity, plan: plan, windows: windows, fetchedAt: now, source: cli ? .antigravityCLI : .antigravityApp)
     }
     public static func models(_ data: Data, now: Date = Date()) throws -> SubscriptionUsage {
         let root = try UsageParser.object(data)
@@ -47,7 +49,7 @@ public enum AntigravityUsageParser {
         guard !windows.isEmpty else { throw UsageError.unavailable }
         let plan = ((status?["planStatus"] as? [String: Any])?["planInfo"] as? [String: Any])?["planName"] as? String
             ?? (status?["userTier"] as? [String: Any])?["name"] as? String
-        return SubscriptionUsage(provider: .antigravity, plan: plan, windows: windows, fetchedAt: now)
+        return SubscriptionUsage(provider: .antigravity, plan: plan, windows: windows, fetchedAt: now, source: .antigravityApp)
     }
     private static func checkCode(_ root: [String: Any]) throws {
         if let code = root["code"], !["0", "ok", "success"].contains(String(describing: code).lowercased()) { throw UsageError.unavailable }
@@ -56,6 +58,62 @@ public enum AntigravityUsageParser {
 
 enum AntigravityUsageClient {
     static func fetch(home: String) async throws -> SubscriptionUsage {
+        try await fetch(cli: { try await fetchCLI(home: home) }, application: { try await fetchApplication() })
+    }
+    /// Read exactly one successful source. Never add or average shared quota snapshots.
+    static func fetch(
+        cli: () async throws -> SubscriptionUsage,
+        application: () async throws -> SubscriptionUsage
+    ) async throws -> SubscriptionUsage {
+        try Task.checkCancellation()
+        let cliFailure: Error
+        do {
+            return try sourced(await cli(), source: .antigravityCLI)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            cliFailure = error
+        }
+        try Task.checkCancellation()
+        do {
+            return try sourced(await application(), source: .antigravityApp)
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            try Task.checkCancellation()
+            throw AntigravitySharedUsageError(
+                cli: failureSummary(cliFailure), application: failureSummary(error)
+            )
+        }
+    }
+    private static func sourced(_ usage: SubscriptionUsage, source: SubscriptionUsageSource) throws -> SubscriptionUsage {
+        guard !usage.windows.isEmpty else { throw UsageError.unavailable }
+        return SubscriptionUsage(provider: .antigravity, plan: usage.plan, windows: usage.windows, fetchedAt: usage.fetchedAt, source: source)
+    }
+    private static func failureSummary(_ error: Error) -> String {
+        if let error = error as? AntigravityUsageError {
+            switch error {
+            case .cliNotInstalled: return "未检测到 agy CLI"
+            case .unsupportedCLI: return "需要 agy 1.1.11 或更新的稳定版本"
+            case .authenticationRequired: return "未登录或登录已失效"
+            case .timedOut: return "读取超时"
+            case .backgroundUnavailable: return "无法在后台安全读取"
+            case .oversized: return "用量报告过大"
+            case .failed: return "读取失败，请确认已登录"
+            }
+        }
+        if let error = error as? UsageError {
+            switch error {
+            case .login: return "应用未运行或未登录"
+            case .expired: return "登录已失效"
+            case .unavailable: return "未返回可读取的配额"
+            case .invalid: return "用量数据格式不支持"
+            case .http(let status): return "服务不可用（HTTP \(status)）"
+            }
+        }
+        return "读取失败，请稍后重试"
+    }
+    static func fetchApplication() async throws -> SubscriptionUsage {
         let endpoints = await Task.detached(priority: .utility) { AntigravityProcesses.endpoints() }.value
         let deadline = Date().addingTimeInterval(10)
         for endpoint in endpoints {
@@ -68,20 +126,43 @@ enum AntigravityUsageClient {
                 } catch is CancellationError { throw CancellationError() } catch { continue }
             }
         }
-        let candidates = [home + "/.local/bin/agy", "/opt/homebrew/bin/agy", "/usr/local/bin/agy", "/Applications/Antigravity.app/Contents/Resources/app/bin/agy"]
-        guard let binary = candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else { throw UsageError.login(.antigravity) }
+        // The fallback only reads an existing service; it never starts an app or a CLI.
+        throw UsageError.login(.antigravity)
+    }
+    static func fetchCLI(home: String) async throws -> SubscriptionUsage {
+        guard let binary = cliBinary(home: home) else { throw AntigravityUsageError.cliNotInstalled }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("boringnotch-agy-" + UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         defer { try? FileManager.default.removeItem(at: directory) }
         let versionData = try await AntigravityCommand.run(binary, arguments: ["--version"], directory: directory, home: home, timeout: 3, limit: 4096)
         let version = String(decoding: versionData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        let parts = version.split(separator: ".").compactMap { Int($0) }
-        guard parts.count == 3, (parts[0], parts[1], parts[2]) >= (1, 1, 11) else {
+        guard supportsUsage(version: version) else {
             throw AntigravityUsageError.unsupportedCLI
         }
         // Version gate is required: older agy versions could treat unknown slash commands as prompts.
-        let report = try await AntigravityCommand.run(binary, arguments: ["-p", "/usage", "--output-format", "json", "--print-timeout", "25s"], directory: directory, home: home, timeout: 27, limit: 1_048_576)
+        // A private, temporary log also lets us stop immediately if silent auth falls
+        // back to interactive OAuth. It is removed with the probe directory, never shown.
+        let diagnostics = directory.appendingPathComponent("usage.log")
+        let report = try await AntigravityCommand.run(binary, arguments: ["-p", "/usage", "--output-format", "json", "--print-timeout", "25s", "--log-file", diagnostics.path], directory: directory, home: home, timeout: 27, limit: 1_048_576, diagnosticsFile: diagnostics)
         return try AntigravityUsageParser.summary(report, cli: true)
+    }
+    static func cliBinary(home: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        let paths = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        let candidates = [home + "/.local/bin/agy", home + "/.gemini/antigravity-cli/bin/agy"]
+            + paths.filter { $0.hasPrefix("/") }.map { $0 + "/agy" }
+            + ["/opt/homebrew/bin/agy", "/usr/local/bin/agy", "/Applications/Antigravity.app/Contents/Resources/app/bin/agy"]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+    static func supportsUsage(version: String) -> Bool {
+        // Reject prereleases and unrecognized output before submitting any slash command.
+        let pattern = #"^(?:agy\s+)?v?(\d+)\.(\d+)\.(\d+)(?:\+[A-Za-z0-9.-]+)?$"#
+        guard let regex = try? NSRegularExpression(pattern: pattern),
+              let match = regex.firstMatch(in: version, range: NSRange(version.startIndex..., in: version)) else { return false }
+        let parts = (1...3).compactMap { index -> Int? in
+            guard let range = Range(match.range(at: index), in: version) else { return nil }
+            return Int(version[range])
+        }
+        return parts.count == 3 && (parts[0], parts[1], parts[2]) >= (1, 1, 11)
     }
     private static func request(_ endpoint: AntigravityProcesses.Endpoint, method: String, timeout: TimeInterval) async throws -> Data {
         let url = URL(string: "https://127.0.0.1:\(endpoint.port)/exa.language_server_pb.LanguageServerService/\(method)")!
@@ -98,6 +179,14 @@ enum AntigravityUsageClient {
         let (data, response) = try await session.data(for: request)
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw UsageError.unavailable }
         return data
+    }
+}
+
+struct AntigravitySharedUsageError: LocalizedError {
+    let cli: String
+    let application: String
+    var errorDescription: String? {
+        "无法读取共享额度。\nagy CLI：\(cli)\nAntigravity：\(application)\n请手动运行 agy 登录，或打开已登录的 Antigravity，再刷新。"
     }
 }
 
@@ -118,11 +207,14 @@ private final class AntigravityLoopbackDelegate: NSObject, URLSessionDelegate, U
 }
 
 enum AntigravityUsageError: LocalizedError {
-    case unsupportedCLI, failed, timedOut, oversized
+    case cliNotInstalled, unsupportedCLI, failed, timedOut, oversized, authenticationRequired, backgroundUnavailable
     var errorDescription: String? {
         switch self {
+        case .cliNotInstalled: return "未检测到 agy CLI，请安装后刷新用量。"
         case .unsupportedCLI: return "读取用量需要 agy 1.1.11 或更新版本，请更新 Antigravity CLI。"
-        case .failed: return "无法读取 Antigravity 配额，请确认应用或 agy CLI 已登录。"
+        case .failed: return "无法读取 agy CLI 配额，请确认已登录后刷新用量。"
+        case .authenticationRequired: return "agy CLI 未登录或登录已失效，请在终端手动运行 agy 登录后刷新。"
+        case .backgroundUnavailable: return "系统无法安全地在后台读取 agy CLI 配额，请稍后重试。"
         case .timedOut: return "Antigravity 配额读取超时，稍后自动重试。"
         case .oversized: return "Antigravity 用量报告超过大小限制。"
         }

@@ -35,11 +35,11 @@ struct IntegrationSettingsView: View {
             Section("订阅用量") {
                 Toggle("自动同步订阅用量", isOn: $syncEnabled)
                     .onChange(of: syncEnabled) { _, enabled in if enabled { SubscriptionMonitor.shared.refresh() } }
-                Text("每 5 分钟同步。OpenAI 显示 Codex 配额；Gemini 显示 CLI / Code Assist 配额；Antigravity 从自己的应用或 agy CLI 读取模型配额。登录信息不写入本应用。").font(.caption).foregroundStyle(.secondary)
+                Text("每 5 分钟同步。OpenAI 显示 Codex 配额；Google AI 只显示一张 Antigravity / agy 共享额度卡片，优先检测 agy CLI，失败后读取已运行的 Antigravity 应用。Gemini CLI 不参与此额度页面。两种来源均不可用时只显示文字提醒，请手动登录后刷新；不会打开网页。").font(.caption).foregroundStyle(.secondary)
                 Button("立即同步") { SubscriptionMonitor.shared.refresh() }.disabled(!syncEnabled)
             }
             Section("刘海中的订阅可见性") {
-                ForEach(SubscriptionProvider.allCases) { provider in
+                ForEach(SubscriptionProvider.monitoredProviders) { provider in
                     SubscriptionVisibilityToggle(provider: provider)
                 }
                 Text("控制用量页面中各张订阅卡片的显示，重启后保留选择。隐藏卡片不影响自动同步。").font(.caption).foregroundStyle(.secondary)

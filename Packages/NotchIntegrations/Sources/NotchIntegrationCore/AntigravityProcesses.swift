@@ -10,13 +10,13 @@ enum AntigravityProcesses {
         for pid in allPIDs() {
             guard identity(pid) != nil, let path = executablePath(pid) else { continue }
             let name = URL(fileURLWithPath: path.lowercased()).lastPathComponent
-            guard name.hasPrefix("language_server") || name.hasPrefix("language-server") || ["agy", "antigravity-cli"].contains(name),
+            guard name.hasPrefix("language_server") || name.hasPrefix("language-server"),
+                  !path.contains("/antigravity-cli/"),
                   let arguments = arguments(pid) else { continue }
             let command = arguments.joined(separator: " ").lowercased()
-            let cli = ["agy", "antigravity-cli"].contains(name)
-            guard cli || command.contains("antigravity") else { continue }
+            guard command.contains("antigravity") else { continue }
             let token = flag("--csrf_token", in: arguments)
-            guard cli || token != nil else { continue }
+            guard token != nil else { continue }
             let extensionPort = flag("--extension_server_port", in: arguments).flatMap(Int.init)
             let extensionToken = flag("--extension_server_csrf_token", in: arguments)
             for port in listeningTCPPorts(pid) {

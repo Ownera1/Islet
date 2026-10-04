@@ -119,16 +119,21 @@ final class IntegrationTests: XCTestCase {
         let defaults = UserDefaults(suiteName: name)!
         defer { defaults.removePersistentDomain(forName: name) }
         XCTAssertEqual(SubscriptionProvider.allCases.count, 4)
+        XCTAssertEqual(SubscriptionProvider.monitoredProviders, [.claude, .openai, .antigravity])
+        XCTAssertNil(SubscriptionProvider.antigravity.dashboard)
         XCTAssertTrue(SubscriptionProvider.allCases.allSatisfy { $0.isVisible(in: defaults) })
         defaults.set(false, forKey: SubscriptionProvider.gemini.visibilityKey)
         XCTAssertFalse(SubscriptionProvider.gemini.isVisible(in: UserDefaults(suiteName: name)!))
         XCTAssertTrue(SubscriptionProvider.antigravity.isVisible(in: defaults))
+        defaults.set(false, forKey: SubscriptionProvider.antigravity.visibilityKey)
+        XCTAssertFalse(SubscriptionProvider.antigravity.isVisible(in: UserDefaults(suiteName: name)!))
         XCTAssertEqual(UsageWindow(id: "quota", label: "quota", usedPercent: 37).remainingPercent, 63)
     }
     func testAntigravityBucketsKeepGroupsWindowsAndMissingDataDistinct() throws {
         let data = Data(#"{"status":"SUCCESS","command":{"name":"usage","data":{"groups":[{"name":"Gemini Models","buckets":[{"id":"g-5h","window":"5h","remaining_fraction":0.8,"reset_time":"2026-10-04T16:00:00Z"},{"id":"g-week","window":"weekly","remaining_fraction":0.6},{"id":"unknown"}]},{"name":"Claude and GPT models","buckets":[{"id":"third-week","window":"weekly","remaining_fraction":0.4},{"id":"disabled","disabled":true,"remaining_fraction":0}]}]}}}"#.utf8)
         let usage = try AntigravityUsageParser.summary(data, cli: true)
         XCTAssertEqual(usage.provider, .antigravity)
+        XCTAssertEqual(usage.source, .antigravityCLI)
         XCTAssertEqual(usage.windows.map(\.label), ["Gemini · 5 小时", "Gemini · 每周", "Claude / GPT · 每周"])
         XCTAssertEqual(usage.windows[0].remainingPercent, 80, accuracy: 0.001)
         XCTAssertEqual(usage.windows[2].remainingPercent, 40, accuracy: 0.001)
@@ -139,10 +144,12 @@ final class IntegrationTests: XCTestCase {
     func testAntigravityLocalSchemasSupportOneofAndLegacyModels() throws {
         let summary = try AntigravityUsageParser.summary(Data(#"{"code":0,"response":{"groups":[{"displayName":"Gemini Models","buckets":[{"bucketId":"weekly","window":"weekly","remaining":{"case":"remainingFraction","value":0.55}}]}]}}"#.utf8))
         XCTAssertEqual(summary.windows.count, 1)
+        XCTAssertEqual(summary.source, .antigravityApp)
         XCTAssertEqual(summary.windows[0].remainingPercent, 55, accuracy: 0.001)
         let legacy = try AntigravityUsageParser.models(Data(#"{"userStatus":{"userTier":{"name":"Pro"},"cascadeModelConfigData":{"clientModelConfigs":[{"label":"Gemini Pro","modelOrAlias":{"model":"gemini-pro"},"quotaInfo":{"remainingFraction":0.9}},{"label":"unknown","modelOrAlias":{"model":"unknown"}}]}}}"#.utf8))
         XCTAssertEqual(legacy.windows.count, 1)
         XCTAssertEqual(legacy.plan, "Pro")
+        XCTAssertEqual(legacy.source, .antigravityApp)
         XCTAssertEqual(legacy.windows[0].remainingPercent, 90, accuracy: 0.001)
         XCTAssertThrowsError(try AntigravityUsageParser.models(Data(#"{"code":401}"#.utf8)))
     }

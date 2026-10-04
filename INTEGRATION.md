@@ -7,8 +7,8 @@
 本机开发构建位于 `build/DerivedData/Build/Products/Debug/Islet.app`。打开应用，在刘海右上角点设置，选择 **Agent 与订阅**。
 
 - **Agent 连接**：只提供 Pi、Codex、Claude Code、ZCode、Antigravity 五种连接。点对应工具的“安装连接”，然后重启该工具。Codex 还需要运行 `/hooks` 审核并启用新 Hook。安装前会在配置文件旁保存 `.boringnotch-backup-时间戳`；安装和移除都会保留其他 Hook。
-- **刘海中的订阅可见性**：Claude、OpenAI、Gemini、Antigravity 各自有“显示剩余量”开关。默认全部显示，立即生效，重启后保留；隐藏卡片不影响后台同步。全部隐藏时显示设置提示。
-- **自动同步订阅用量**：默认每 5 分钟刷新，也可以手动刷新。显示各窗口的剩余百分比、重置时间和上次更新时间。失败时保留上次成功数据并标记错误；没有额度数据时显示原因。
+- **刘海中的订阅可见性**：Claude、OpenAI、Google AI 各自有“显示剩余量”开关。Google AI 将 Antigravity 应用与 agy CLI 的共享额度显示在唯一一张卡片中，沿用原 Antigravity 的显示设置。默认全部显示，立即生效，重启后保留；隐藏卡片不影响后台同步。全部隐藏时显示设置提示。Gemini CLI 不展示、不参与自动同步。
+- **自动同步订阅用量**：默认每 5 分钟刷新，也可以手动刷新。显示各窗口的剩余百分比、重置时间和上次更新时间。失败时保留上次成功数据并标记错误；没有额度数据时显示原因。无论卡片是否显示，后台检测均不打开登录页面；请手动到对应工具完成登录。
 - **音乐**：打开“显示同步歌词”。优先读取 Apple Music 当前歌曲歌词，其他播放器按歌曲、歌手、专辑和时长查询 LRCLIB。同步歌词跟随进度，普通歌词显示首行；找不到时显示提示。切歌会取消旧请求并清空旧歌词。
 
 Agent 页面提供多会话列表、工具筛选、运行/思考/完成状态、当前工具、项目/分支、任务清单进度、最近提问与原生 Markdown 回复。可以回到来源窗口，处理一次性工具审批和问题回答。Antigravity 当前为观察模式，权限仍在其原应用处理；不会从刘海静默授权。Terminal / iTerm 会尽量定位来源标签，其他终端回到应用窗口。
@@ -19,12 +19,13 @@ Agent 页面提供多会话列表、工具筛选、运行/思考/完成状态、
 | --- | --- | --- |
 | Claude | Claude Code 已有 OAuth 登录：自定义目录文件，或 Keychain / 默认凭据文件 | Claude 返回的会话、每周和模型额度 |
 | OpenAI | Codex 已有登录，优先 wham 用量接口，失败时调用 Codex app-server `account/rateLimits/read` | Codex 订阅窗口及模型额度 |
-| Gemini | Gemini CLI `.gemini/oauth_creds.json`，Code Assist quota API | CLI / Code Assist 的模型配额 |
-| Antigravity | 已运行的同一用户 Antigravity 本地服务；不可用时调用已安装、已登录的 `agy` 的内置 `/usage` 报告 | Antigravity 自己的 Gemini、Claude/GPT 等模型额度及实际返回的窗口 |
+| Google AI | 优先自动查找 `~/.local/bin/agy`、CLI 安装目录、绝对 PATH 目录及常用安装目录，并静默读取 `/usage`；失败后只查询已运行的同一用户 Antigravity 应用本地服务 | Antigravity / agy 的共享模型额度及实际返回的窗口，标明当前使用的来源 |
 
-Gemini 网页聊天额度、OpenAI 网页聊天的所有模型额度目前没有统一可读取接口，本版本不会用 CLI 配额冒充它们。Gemini 和 Antigravity 使用独立来源，互不借用登录凭据。`agy` 回退要求 1.1.11 或更新版本，先检查版本，再执行 `-p /usage --output-format json`，不提交模型提示。
+Google AI 每轮只返回第一份成功读取的额度快照：CLI 成功时不再查询应用；CLI 安装、版本、登录、超时或解析失败时，才尝试应用。同一额度池不相加、不取平均，也不在 Gemini 模型池和第三方模型池之间混用窗口。两种来源都失败时显示各自原因和手动登录提醒；Google AI 卡片没有网页跳转按钮。来源切换不改变卡片或可见性开关，失败时仍保留上次成功快照。
 
-登录凭据只在辅助进程内读取和使用，不复制进本应用、不写入本应用设置、不打印日志。Gemini 过期 token 在已安装 CLI 的 OAuth client 可用时仅在内存刷新。Antigravity 本地 HTTPS 只允许连接同一用户进程拥有的 `127.0.0.1` 端口，使用其 CSRF token，拒绝重定向；网络订阅请求保持正常 TLS 校验。
+Gemini CLI 的旧数据解析保留兼容，但不进入当前额度页面或后台轮询。网页聊天的所有模型额度目前没有统一可读取接口，本版本不会用 CLI 配额冒充它们。`agy` 要求 1.1.11 或更新的稳定版本，先检查版本，再执行 `-p /usage --output-format json`，不提交模型提示。版本检查和配额命令均在禁止执行 `open`、AppleScript、应用主程序及访问 LaunchServices / Apple Events 的系统沙箱内运行，限制继承到子进程；同时使用无终端输入和禁止浏览器的环境。沙箱不可用时不启动 CLI，不回退到无限制执行。
+
+登录凭据只在辅助进程及 CLI 内读取和使用，不复制进本应用、不写入本应用设置、不打印凭据。Antigravity 本地 HTTPS 只允许连接同一用户进程拥有的 `127.0.0.1` 端口，使用其 CSRF token，拒绝重定向；网络订阅请求保持正常 TLS 校验。
 
 主应用保留 App Sandbox。文件和 CLI 操作在 boring.notch 原有的 XPC Helper 内执行。Agent 通过权限为 0600 的 `/tmp/boringnotch-用户ID/agent.sock` 通信；桥接程序安装到 `~/.boringnotch/notch-agent-bridge`，Pi 扩展安装到 `~/.pi/agent/extensions/boringnotch.ts`。
 
@@ -52,6 +53,12 @@ python3 scripts/smoke-agents.py --cleanup
 ```
 
 ## 本次验证
+
+### 订阅修复
+
+136 项 Swift Package 测试通过，覆盖 CLI 优先且成功后不再访问应用、CLI 各类失败后按顺序回退、空配额不伪造零用量、双来源失败文字提醒、取消不回退，以及 agy 检测、版本门槛、XPC 新旧数据兼容、浏览器和子进程应用启动拦截、OAuth 提前停止、网络超时与登录失败区分。Debug 应用和 Helper 已编译通过。实际界面已确认只有一张 Google AI 卡片、一个 Google AI 显示开关，没有 Google 网页跳转按钮；本机 CLI 登录不可用且应用未运行时，完整显示双来源失败原因与手动登录提醒。真实启动中已观察到 agy 登录回退的 `open` 调用被系统沙箱拒绝。本机真实 CLI 配额尚未成功返回，未把未返回的额度判为零。
+
+### 此前的集成验证
 
 - Swift Package：117 项测试通过，覆盖 Hook 配置保留/幂等安装、五种来源生命周期、审批回答格式、任务进度、JSONL 增量/文件替换、歌词时间戳、四种配额解析和独立可见性。
 - 本机 Debug 构建已通过；发布构建按 arm64 与 x86_64 两个架构打包应用、Helper 和 bridge。Intel 实机运行尚未验证。主应用 App Sandbox 保留。

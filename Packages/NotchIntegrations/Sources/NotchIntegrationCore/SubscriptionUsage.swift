@@ -3,8 +3,10 @@ import CodeIslandCore
 
 public enum SubscriptionProvider: String, CaseIterable, Identifiable, Codable, Sendable {
     case claude, openai, gemini, antigravity
+    /// Gemini remains decodable for compatibility, but is not monitored or displayed.
+    public static let monitoredProviders: [SubscriptionProvider] = [.claude, .openai, .antigravity]
     public var id: String { rawValue }
-    public var name: String { switch self { case .claude: return "Claude"; case .openai: return "OpenAI"; case .gemini: return "Gemini"; case .antigravity: return "Antigravity" } }
+    public var name: String { switch self { case .claude: return "Claude"; case .openai: return "OpenAI"; case .gemini: return "Gemini"; case .antigravity: return "Google AI" } }
     public var visibilityKey: String { "subscriptionVisible." + rawValue }
     public func isVisible(in defaults: UserDefaults = .standard) -> Bool {
         defaults.object(forKey: visibilityKey) as? Bool ?? true
@@ -14,15 +16,15 @@ public enum SubscriptionProvider: String, CaseIterable, Identifiable, Codable, S
         case .claude: return "Claude 订阅"
         case .openai: return "Codex 订阅额度"
         case .gemini: return "Gemini CLI / Code Assist"
-        case .antigravity: return "Antigravity 模型配额"
+        case .antigravity: return "Antigravity / agy 共享配额"
         }
     }
-    public var dashboard: URL {
+    public var dashboard: URL? {
         switch self {
         case .claude: return URL(string: "https://claude.ai/settings/usage")!
         case .openai: return URL(string: "https://chatgpt.com/codex/settings/usage")!
         case .gemini: return URL(string: "https://gemini.google.com")!
-        case .antigravity: return URL(string: "https://antigravity.google.com")!
+        case .antigravity: return nil
         }
     }
 }
@@ -36,20 +38,32 @@ public struct UsageWindow: Identifiable, Equatable, Codable, Sendable {
         self.id = id; self.label = label; self.usedPercent = min(100, max(0, usedPercent)); self.resetsAt = resetsAt
     }
 }
+public enum SubscriptionUsageSource: String, Codable, Sendable {
+    case antigravityCLI = "antigravity-cli"
+    case antigravityApp = "antigravity-app"
+    public var name: String {
+        switch self {
+        case .antigravityCLI: return "agy CLI"
+        case .antigravityApp: return "Antigravity 应用"
+        }
+    }
+}
 public struct SubscriptionUsage: Equatable, Codable, Sendable {
     public let provider: SubscriptionProvider
     public let plan: String?
     public let windows: [UsageWindow]
     public let fetchedAt: Date
-    public init(provider: SubscriptionProvider, plan: String?, windows: [UsageWindow], fetchedAt: Date = Date()) {
+    public let source: SubscriptionUsageSource?
+    public init(provider: SubscriptionProvider, plan: String?, windows: [UsageWindow], fetchedAt: Date = Date(), source: SubscriptionUsageSource? = nil) {
         self.provider = provider; self.plan = plan; self.windows = windows; self.fetchedAt = fetchedAt
+        self.source = source
     }
 }
 public enum UsageError: LocalizedError {
     case login(SubscriptionProvider), expired(SubscriptionProvider), unavailable, http(Int), invalid
     public var errorDescription: String? {
         switch self {
-        case .login(.antigravity): return "请打开已登录的 Antigravity，或登录 agy CLI。"
+        case .login(.antigravity): return "Antigravity 应用未运行或未登录。"
         case .login(let provider): return "请先登录 \(provider == .openai ? "Codex" : provider == .gemini ? "Gemini CLI" : "Claude Code")。"
         case .expired(let provider): return "\(provider.name) 登录已过期，请打开对应 CLI 更新登录。"
         case .unavailable: return "该账户暂未返回可读取的配额。"

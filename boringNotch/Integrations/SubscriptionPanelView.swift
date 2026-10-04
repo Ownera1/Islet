@@ -5,15 +5,14 @@ struct SubscriptionPanelView: View {
     @ObservedObject private var monitor = SubscriptionMonitor.shared
     @AppStorage("subscriptionVisible.claude") private var claudeVisible = true
     @AppStorage("subscriptionVisible.openai") private var openaiVisible = true
-    @AppStorage("subscriptionVisible.gemini") private var geminiVisible = true
     @AppStorage("subscriptionVisible.antigravity") private var antigravityVisible = true
     @AppStorage("subscriptionSyncEnabled") private var syncEnabled = true
     private var providers: [SubscriptionProvider] {
-        SubscriptionProvider.allCases.filter {
+        SubscriptionProvider.monitoredProviders.filter {
             switch $0 {
             case .claude: return claudeVisible
             case .openai: return openaiVisible
-            case .gemini: return geminiVisible
+            case .gemini: return false
             case .antigravity: return antigravityVisible
             }
         }
@@ -26,6 +25,7 @@ struct SubscriptionPanelView: View {
                 Text(syncEnabled ? "每 5 分钟同步" : "自动同步已关闭").font(.caption2).foregroundStyle(.gray)
                 Button { monitor.refresh() } label: { Image(systemName: "arrow.clockwise") }
                     .buttonStyle(.plain).disabled(monitor.refreshing || !syncEnabled).help("刷新用量")
+                    .accessibilityLabel("刷新订阅用量")
             }
             if providers.isEmpty {
                 VStack(spacing: 8) {
@@ -34,9 +34,12 @@ struct SubscriptionPanelView: View {
                     Text("在设置 → Agent 与订阅中选择要显示的剩余量。").font(.caption).foregroundStyle(.gray)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                HStack(alignment: .top, spacing: 10) {
-                    ForEach(providers) { provider in
-                        SubscriptionTile(provider: provider, usage: monitor.usage[provider], error: monitor.errors[provider], refreshing: monitor.refreshing, enabled: syncEnabled)
+                ScrollView(.horizontal) {
+                    HStack(alignment: .top, spacing: 10) {
+                        ForEach(providers) { provider in
+                            SubscriptionTile(provider: provider, usage: monitor.usage[provider], error: monitor.errors[provider], refreshing: monitor.refreshing, enabled: syncEnabled)
+                                .containerRelativeFrame(.horizontal, count: min(providers.count, 3), spacing: 10)
+                        }
                     }
                 }.frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -54,12 +57,18 @@ private struct SubscriptionTile: View {
             HStack {
                 Text(provider.name).font(.caption.weight(.semibold))
                 Spacer(minLength: 2)
-                Button { NSWorkspace.shared.open(provider.dashboard) } label: { Image(systemName: "arrow.up.right") }.buttonStyle(.plain).help("打开 \(provider.name) 用量页面")
+                if let dashboard = provider.dashboard {
+                    Button { NSWorkspace.shared.open(dashboard) } label: { Image(systemName: "arrow.up.right") }.buttonStyle(.plain).help("打开 \(provider.name) 用量页面")
+                        .accessibilityLabel("打开 \(provider.name) 用量页面")
+                }
             }
             Text(provider.scope).font(.system(size: 9)).foregroundStyle(.gray).lineLimit(1)
             ScrollView {
                 VStack(alignment: .leading, spacing: 7) {
                     if let usage {
+                        if let source = usage.source {
+                            Text("来源：\(source.name)").font(.system(size: 9)).foregroundStyle(.gray)
+                        }
                         ForEach(usage.windows) { window in
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(window.label).font(.system(size: 10)).lineLimit(2).help(window.label)
