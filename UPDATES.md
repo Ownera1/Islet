@@ -35,6 +35,10 @@ build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account com.o
 
 每个 Release 包含 DMG、用于更新的 ZIP、appcast、SHA256SUMS 和 sourceCommit 发布清单，有效时还包含 delta。当前工作流使用本地签名；引入 Developer ID／公证时需要同时调整构建、打包和发布清单校验，不能只更改清单中的标签。
 
+## 发布后的本地清理
+
+用户约定：每次 GitHub Release 发布成功并确认安装包可下载、签名 feed 已更新后，运行 `./scripts/clean-build-cache.sh` 清理本项目的本地编译缓存。可先用 `--dry-run` 查看范围。保留源码、`dist/` 安装包、已编译应用和验证日志；发布失败时暂不清理，继续排查后再执行。GitHub Actions 运行在远端，完成发布后仍需在本机执行此脚本。
+
 ## 本机验证
 
 ```sh
