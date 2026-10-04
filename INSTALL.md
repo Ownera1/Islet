@@ -8,6 +8,8 @@
 4. 完成首次引导。需要 Agent 连接时，进入“设置 → Agent 与订阅”，安装对应连接；Codex 还需运行 `/hooks` 审核。
 5. 在“刘海中的订阅可见性”分别选择 Claude、OpenAI、Gemini、Antigravity 的剩余量是否显示。
 
+设置也可从应用菜单或菜单栏图标打开，快捷键为 `⌘,`。
+
 应用使用独立标识 `com.ownera1.agentusagenotch`，与原版 boring.notch 设置隔离。不要同时运行原版/旧开发构建与本集成版，以免两个刘海窗口重叠或争用同一个 Agent socket。更新通过本仓库的 GitHub Release 下载。
 
 源码及安装包：https://github.com/Ownera1/agent-usage-notch/releases
