@@ -4,9 +4,9 @@ import Combine
 import NotchIntegrationCore
 
 enum ReleaseLinks {
-    static let repository = URL(string: "https://github.com/Ownera1/agent-usage-notch")!
+    static let repository = URL(string: "https://github.com/Ownera1/Islet")!
     static let downloads = repository.appendingPathComponent("releases")
-    static let feed = URL(string: "https://raw.githubusercontent.com/Ownera1/agent-usage-notch/main/updater/appcast.xml")!
+    static let feed = URL(string: "https://raw.githubusercontent.com/Ownera1/Islet/main/updater/appcast.xml")!
 }
 
 // Pin the feed even if a local preference was left over from an upstream build.
@@ -15,8 +15,8 @@ final class AppUpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, shouldProceedWithUpdate item: SUAppcastItem, updateCheck: SPUUpdateCheck) throws {
         guard UpdateSourcePolicy.permits(item.fileURL) else {
-            throw NSError(domain: "AgentUsageNotch.UpdateSource", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "更新源暂不可用：安装包必须来自 Agent Usage Notch 的 GitHub Release。"])
+            throw NSError(domain: "Islet.UpdateSource", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: "更新源暂不可用：安装包必须来自 Islet 的 GitHub Release。"])
         }
     }
 }

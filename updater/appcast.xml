@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
   <channel>
-    <title>Agent Usage Notch</title>
-    <link>https://github.com/Ownera1/agent-usage-notch/releases</link>
-    <description>Signed updates for Agent Usage Notch</description>
+    <title>Islet</title>
+    <link>https://github.com/Ownera1/Islet/releases</link>
+    <description>Signed updates for Islet</description>
     <language>zh-cn</language>
   </channel>
 </rss>

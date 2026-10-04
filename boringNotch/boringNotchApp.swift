@@ -32,7 +32,7 @@ struct DynamicNotchApp: App {
     }
 
     var body: some Scene {
-        MenuBarExtra("Agent Usage Notch", systemImage: "sparkle", isInserted: $showMenuBarIcon) {
+        MenuBarExtra("Islet", systemImage: "sparkle", isInserted: $showMenuBarIcon) {
             Button("Settings") {
                 DispatchQueue.main.async {
                     SettingsWindowController.shared.showWindow()
@@ -41,7 +41,7 @@ struct DynamicNotchApp: App {
             .keyboardShortcut(KeyEquivalent(","), modifiers: .command)
             CheckForUpdatesView(updater: updaterController.updater)
             Divider()
-            Button("Restart Agent Usage Notch") {
+            Button("Restart Islet") {
                 ApplicationRelauncher.restart()
             }
             Button("Quit", role: .destructive) {

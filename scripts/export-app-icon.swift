@@ -66,9 +66,9 @@ for image in oldImages {
 }
 
 let logo = assets.appendingPathComponent("logo2.imageset")
-try export(512, to: logo.appendingPathComponent("AgentUsageNotch.png"))
+try export(512, to: logo.appendingPathComponent("Islet.png"))
 let logoContents: [String: Any] = [
-    "images": [["filename": "AgentUsageNotch.png", "idiom": "universal"]],
+    "images": [["filename": "Islet.png", "idiom": "universal"]],
     "info": ["author": "xcode", "version": 1]
 ]
 var logoData = try JSONSerialization.data(withJSONObject: logoContents, options: [.prettyPrinted, .sortedKeys])

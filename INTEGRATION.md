@@ -4,7 +4,7 @@
 
 ## 使用
 
-本机开发构建位于 `build/DerivedData/Build/Products/Debug/Agent Usage Notch.app`。打开应用，在刘海右上角点设置，选择 **Agent 与订阅**。
+本机开发构建位于 `build/DerivedData/Build/Products/Debug/Islet.app`。打开应用，在刘海右上角点设置，选择 **Agent 与订阅**。
 
 - **Agent 连接**：只提供 Pi、Codex、Claude Code、ZCode、Antigravity 五种连接。点对应工具的“安装连接”，然后重启该工具。Codex 还需要运行 `/hooks` 审核并启用新 Hook。安装前会在配置文件旁保存 `.boringnotch-backup-时间戳`；安装和移除都会保留其他 Hook。
 - **刘海中的订阅可见性**：Claude、OpenAI、Gemini、Antigravity 各自有“显示剩余量”开关。默认全部显示，立即生效，重启后保留；隐藏卡片不影响后台同步。全部隐藏时显示设置提示。
@@ -37,7 +37,7 @@ Gemini 网页聊天额度、OpenAI 网页聊天的所有模型额度目前没有
 swift test --package-path Packages/NotchIntegrations --scratch-path build/IntegrationPackage
 ```
 
-发行版最低版本设为 macOS 15，与上游预编译 MediaRemoteAdapter 匹配。应用名称为 Agent Usage Notch，使用独立 Bundle ID；不会启动上游 Sparkle 更新源。安装方式见 [INSTALL.md](INSTALL.md)。
+发行版最低版本设为 macOS 15，与上游预编译 MediaRemoteAdapter 匹配。应用名称为 Islet，使用独立 Bundle ID；不会启动上游 Sparkle 更新源。安装方式见 [INSTALL.md](INSTALL.md)。
 
 可在应用运行时用合成数据检查真实 bridge → socket → XPC → 刘海流程，不需要安装用户 Hook，不会调用模型或执行请求展示的工具：
 

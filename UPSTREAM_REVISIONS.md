@@ -16,7 +16,7 @@ Local integration changes live in `Packages/NotchIntegrations`, `boringNotch/Int
 `boringNotch/IntegrationResources`, and the integration files of `BoringNotchXPCHelper`.
 The upstream main app remains sandboxed; the upstream helper retains its existing entitlements.
 
-Distribution uses the independent name Agent Usage Notch, bundle identifier
+Distribution uses the independent name Islet, bundle identifier
 `com.ownera1.agentusagenotch`, helper identifier `com.ownera1.agentusagenotch.helper`,
 and GitHub Releases instead of the upstream Sparkle feed. Minimum macOS is 15 to
 match the included MediaRemoteAdapter. The original deployment/localization workflows

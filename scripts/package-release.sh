@@ -2,11 +2,11 @@
 set -eu
 TASK_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$TASK_ROOT"
-TASK_APP="$TASK_ROOT/build/DerivedData/Build/Products/Release/Agent Usage Notch.app"
+TASK_APP="$TASK_ROOT/build/DerivedData/Build/Products/Release/Islet.app"
 TASK_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$TASK_APP/Contents/Info.plist")
 TASK_STAGE="$TASK_ROOT/build/dmg-stage-$TASK_VERSION"
-TASK_DMG="$TASK_ROOT/dist/Agent-Usage-Notch-$TASK_VERSION-universal.dmg"
-TASK_ZIP="$TASK_ROOT/dist/Agent-Usage-Notch-$TASK_VERSION-universal.zip"
+TASK_DMG="$TASK_ROOT/dist/Islet-$TASK_VERSION-universal.dmg"
+TASK_ZIP="$TASK_ROOT/dist/Islet-$TASK_VERSION-universal.zip"
 if [ -e "$TASK_STAGE" ] || [ -e "$TASK_DMG" ] || [ -e "$TASK_ZIP" ]; then
   echo "This version is already staged or packaged. Use a new version or inspect the existing files."
   exit 1
@@ -25,12 +25,12 @@ path.write_bytes(plistlib.dumps(entitlements))
 PY
 /usr/bin/codesign --force --sign - --entitlements "$TASK_ENTITLEMENTS" "$TASK_APP"
 /usr/bin/codesign --verify --deep --strict "$TASK_APP"
-/usr/bin/ditto "$TASK_APP" "$TASK_STAGE/Agent Usage Notch.app"
+/usr/bin/ditto "$TASK_APP" "$TASK_STAGE/Islet.app"
 ln -s /Applications "$TASK_STAGE/Applications"
 cp "$TASK_ROOT/INSTALL.md" "$TASK_STAGE/安装说明.txt"
 cp "$TASK_ROOT/LICENSE" "$TASK_STAGE/LICENSE"
 cp "$TASK_ROOT/THIRD_PARTY_LICENSES" "$TASK_STAGE/THIRD_PARTY_LICENSES"
-/usr/bin/hdiutil create -volname "Agent Usage Notch $TASK_VERSION" -srcfolder "$TASK_STAGE" -format UDZO -ov "$TASK_DMG"
+/usr/bin/hdiutil create -volname "Islet $TASK_VERSION" -srcfolder "$TASK_STAGE" -format UDZO -ov "$TASK_DMG"
 /usr/bin/hdiutil verify "$TASK_DMG"
 /usr/bin/ditto -c -k --sequesterRsrc --keepParent "$TASK_APP" "$TASK_ZIP"
 (cd "$TASK_ROOT/dist" && /usr/bin/shasum -a 256 "$(basename "$TASK_DMG")" "$(basename "$TASK_ZIP")" > SHA256SUMS.txt)

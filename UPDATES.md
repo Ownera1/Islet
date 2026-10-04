@@ -1,8 +1,10 @@
 # Sparkle 与 GitHub Releases
 
-客户端只使用 `Ownera1/agent-usage-notch` 的更新源：
+客户端只使用 `Ownera1/Islet` 的更新源：
 
-- Feed：`https://raw.githubusercontent.com/Ownera1/agent-usage-notch/main/updater/appcast.xml`
+仓库和应用更名为 Islet 后，Bundle ID、XPC 标识及 Ed25519 公钥保持不变，继续使用原有设置与签名密钥。旧仓库地址由 GitHub 重定向；以后发布的 feed 与安装包使用 Islet 地址。当前改名提交不重新发布历史版本的安装包。
+
+- Feed：`https://raw.githubusercontent.com/Ownera1/Islet/main/updater/appcast.xml`
 - 安装包：该仓库 `releases/download/v<version>/` 下的 ZIP／delta。
 - Sparkle 2.9.1 使用 `SUPublicEDKey` 校验 Ed25519 签名，在解压前验证；客户端拒绝其他仓库的安装地址。
 - 默认自动检查，用户选择安装。设置中的“后台下载更新”对应 Sparkle 的自动下载选项。安装完成会重启应用。

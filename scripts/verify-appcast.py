@@ -10,7 +10,7 @@ import xml.etree.ElementTree as ET
 
 SPARKLE = '{http://www.andymatuschak.org/xml-namespaces/sparkle}'
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-PREFIX = 'https://github.com/Ownera1/agent-usage-notch/releases/download/'
+PREFIX = 'https://github.com/Ownera1/Islet/releases/download/'
 
 
 def validate(feed, archives=None, expected_build=None):

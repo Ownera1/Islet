@@ -4,7 +4,7 @@ import Foundation
 public enum ReleaseNotesLink {
     /// Same repository the Sparkle feed (`SUFeedURL` in Info.plist) and every
     /// appcast `<link>` point at.
-    public static let repositoryURL = "https://github.com/wxtsky/CodeIsland"
+    public static let repositoryURL = "https://github.com/Ownera1/Islet"
 
     /// The release page for `version`. Releases are tagged `v<version>`
     /// (`releases/tag/v1.0.34`, see appcast.xml). Anything that cannot be a

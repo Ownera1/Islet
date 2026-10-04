@@ -12,6 +12,8 @@ app, dmg, output = map(pathlib.Path, sys.argv[1:])
 root = pathlib.Path(__file__).resolve().parents[1]
 info = plistlib.loads((app / 'Contents/Info.plist').read_bytes())
 assert info['CFBundleIdentifier'] == 'com.ownera1.agentusagenotch'
+assert app.name == 'Islet.app'
+assert info['CFBundleName'] == info['CFBundleDisplayName'] == info['CFBundleExecutable'] == 'Islet'
 assert info['LSMinimumSystemVersion'] == '15.0'
 subprocess.run(['codesign', '--verify', '--deep', '--strict', str(app)], check=True)
 entitlements = plistlib.loads(subprocess.check_output(
@@ -30,7 +32,7 @@ for path in paths:
 assert (app / 'Contents/Resources/IntegrationResources/boringnotch-pi.ts').is_file()
 assert (app / 'Contents/Resources/LICENSE').is_file()
 assert (app / 'Contents/Resources/THIRD_PARTY_LICENSES').is_file()
-assert info['SUFeedURL'] == 'https://raw.githubusercontent.com/Ownera1/agent-usage-notch/main/updater/appcast.xml'
+assert info['SUFeedURL'] == 'https://raw.githubusercontent.com/Ownera1/Islet/main/updater/appcast.xml'
 assert info['SUPublicEDKey'] == plistlib.loads((root / 'boringNotch/Info.plist').read_bytes())['SUPublicEDKey']
 assert info.get('SUEnableAutomaticChecks') is True
 assert info.get('SUVerifyUpdateBeforeExtraction') is True
@@ -45,9 +47,9 @@ with dmg.open('rb') as stream:
     for chunk in iter(lambda: stream.read(1024 * 1024), b''):
         digest.update(chunk)
 manifest = {
-    'name': 'Agent Usage Notch', 'version': info['CFBundleShortVersionString'],
+    'name': 'Islet', 'version': info['CFBundleShortVersionString'],
     'build': info['CFBundleVersion'], 'bundleId': info['CFBundleIdentifier'],
-    'sourceCommit': revision, 'repository': 'https://github.com/Ownera1/agent-usage-notch',
+    'sourceCommit': revision, 'repository': 'https://github.com/Ownera1/Islet',
     'architectures': ['arm64', 'x86_64'], 'minimumMacOS': '15.0',
     'signature': 'ad-hoc', 'notarized': False,
     'updateFeed': info['SUFeedURL'], 'updateSigning': 'Ed25519',

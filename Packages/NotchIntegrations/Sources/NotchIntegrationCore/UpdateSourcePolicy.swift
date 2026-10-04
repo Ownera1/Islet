@@ -7,7 +7,7 @@ public enum UpdateSourcePolicy {
               url.query == nil, url.fragment == nil else { return false }
         let parts = url.pathComponents
         guard parts.count == 7,
-              Array(parts.prefix(5)) == ["/", "Ownera1", "agent-usage-notch", "releases", "download"],
+              Array(parts.prefix(5)) == ["/", "Ownera1", "Islet", "releases", "download"],
               parts[5].hasPrefix("v"), parts[5].count > 1,
               !parts[6].isEmpty, !parts[6].contains("/"), ![".", ".."].contains(parts[6]) else { return false }
         return true

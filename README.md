@@ -1,6 +1,8 @@
-<img src="boringNotch/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="96" height="96" alt="Agent Usage Notch 图标">
+<img src="boringNotch/Assets.xcassets/AppIcon.appiconset/icon_128x128.png" width="96" height="96" alt="Islet 图标">
 
-# Agent Usage Notch
+# Islet
+
+原名 Agent Usage Notch。应用名称、安装包和仓库现统一为 Islet，保留原有设置和 Agent 连接。
 
 基于 [boring.notch](https://github.com/TheBoredTeam/boring.notch) 的原生 macOS 刘海应用，集成 [CodeIsland](https://github.com/wxtsky/CodeIsland) 的 Agent 会话监控、订阅剩余量和音乐歌词。
 
@@ -8,7 +10,7 @@
 
 ## 安装
 
-从 [最新 GitHub Release](https://github.com/Ownera1/agent-usage-notch/releases/latest) 下载 DMG，将 `Agent Usage Notch.app` 拖入“应用程序”。本仓库已公开，源码和安装包均可直接访问，无需 GitHub 登录。
+从 [最新 GitHub Release](https://github.com/Ownera1/Islet/releases/latest) 下载 DMG，将其中的应用拖入“应用程序”。当前历史安装包仍使用 Agent Usage Notch 名称；新构建及后续安装包使用 `Islet.app`。本仓库已公开，源码和安装包均可直接访问，无需 GitHub 登录。
 
 - macOS **15 或更新版本**。
 - 通用二进制包含 **Apple Silicon / Intel**。实机运行验证使用 Apple Silicon。
@@ -48,6 +50,8 @@ Gemini 当前读取 CLI / Code Assist 配额，OpenAI 当前读取 Codex 配额�
 swift test --package-path Packages/NotchIntegrations --scratch-path build/IntegrationPackage
 # 滚动与收起手势回归测试
 ./scripts/test-pan-gesture.sh
+# 展开背景、顶部贴合和圆角裁剪渲染回归
+./scripts/test-notch-surface.sh
 # 通用 Release 构建
 ./scripts/build-app.sh Release 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 # 在已提交且干净的源码树上打包、验签、生成 SHA-256 和发布清单

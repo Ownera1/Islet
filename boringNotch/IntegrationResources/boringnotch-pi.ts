@@ -396,7 +396,7 @@ export default function boringnotchExtension(pi: ExtensionAPI) {
     return {
       block: true,
       reason:
-        "The user already answered these questions through the Boring Notch desktop app. " +
+        "The user already answered these questions through the Islet desktop app. " +
         "Their answers:\n" +
         lines.join("\n") +
         "\nDo not ask again — proceed using these answers.",
@@ -513,7 +513,7 @@ export default function boringnotchExtension(pi: ExtensionAPI) {
       )?.decision as Record<string, unknown> | undefined;
 
       if (behavior?.behavior === "deny") {
-        return { block: true, reason: "Blocked by Boring Notch" };
+        return { block: true, reason: "Blocked by Islet" };
       }
 
       // Island allow: mark this tool call so permission-gate skips the TUI prompt.

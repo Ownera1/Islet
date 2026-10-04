@@ -119,6 +119,27 @@ struct NotchShape: Shape {
     }
 }
 
+/// Size the opaque surface before clipping so shorter content cannot expose
+/// the menu bar above or below an expanded notch.
+struct NotchSurface: ViewModifier {
+    let shape: NotchShape
+    let height: CGFloat?
+    let topCornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        content
+            .frame(height: height, alignment: .top)
+            .background(.black)
+            .clipShape(shape)
+            .overlay(alignment: .top) {
+                Rectangle()
+                    .fill(.black)
+                    .frame(height: 1)
+                    .padding(.horizontal, topCornerRadius)
+            }
+    }
+}
+
 #Preview {
     NotchShape(topCornerRadius: 6, bottomCornerRadius: 14)
         .frame(width: 200, height: 32)

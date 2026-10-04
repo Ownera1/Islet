@@ -31,6 +31,7 @@ jobs:
       - name: Regression tests
         run: |
           ./scripts/test-pan-gesture.sh
+          ./scripts/test-notch-surface.sh
           python3 scripts/test-update-pipeline.py
           swift test --package-path Packages/NotchIntegrations --scratch-path build/IntegrationPackage
       - name: Universal Release build
@@ -60,7 +61,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Agent Usage Notch ${GITHUB_REF_NAME#v}" --notes-file "updater/release-notes/$GITHUB_REF_NAME.md"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "Islet ${GITHUB_REF_NAME#v}" --notes-file "updater/release-notes/$GITHUB_REF_NAME.md"
           gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" dist/*
       - name: Make release assets available
         env:
