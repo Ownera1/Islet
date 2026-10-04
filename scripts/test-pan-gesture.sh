@@ -10,6 +10,7 @@ xcrun swiftc -swift-version 5 -parse-as-library \
   -F "$TASK_TEST_FRAMEWORKS" -I "$TASK_PLATFORM/Developer/usr/lib" \
   -L "$TASK_PLATFORM/Developer/usr/lib" \
   -Xlinker -rpath -Xlinker "$TASK_TEST_FRAMEWORKS" \
+  -Xlinker -rpath -Xlinker "$TASK_PLATFORM/Developer/Library/PrivateFrameworks" \
   -Xlinker -rpath -Xlinker "$TASK_PLATFORM/Developer/usr/lib" \
   boringNotch/extensions/PanGesture.swift Tests/ScrollPanTests.swift \
   -o build/ScrollPanTests
