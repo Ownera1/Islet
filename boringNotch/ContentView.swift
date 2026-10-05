@@ -10,6 +10,7 @@ import AVFoundation
 import Combine
 import Defaults
 import KeyboardShortcuts
+import NotchIntegrationCore
 import SwiftUI
 import SwiftUIIntrospect
 
@@ -23,6 +24,10 @@ struct ContentView: View {
     @ObservedObject var batteryModel = BatteryStatusViewModel.shared
     @ObservedObject var brightnessManager = BrightnessManager.shared
     @ObservedObject var volumeManager = VolumeManager.shared
+    @ObservedObject private var agentMonitor = AgentMonitor.shared
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Default(.enableLyrics) private var enableLyrics
+    @Default(.collapsedLyricsMode) private var collapsedLyricsMode
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
     @State private var anyDropDebounceTask: Task<Void, Never>?
@@ -42,6 +47,40 @@ struct ContentView: View {
 
     private let extendedHoverPadding: CGFloat = 30
     private let zeroHeightHoverPadding: CGFloat = 10
+
+    private var lyricsPlacement: CollapsedLyricsPlacement {
+        collapsedLyricsPlacement(mode: collapsedLyricsMode, hasHardwareNotch: vm.hasHardwareNotch)
+    }
+
+    private var hasCollapsedLyricContent: Bool {
+        enableLyrics && lyricsPlacement != .hidden
+            && CollapsedLyricFrame.hasContent(document: musicManager.lyricsDocument, availability: musicManager.lyricsAvailability)
+    }
+
+    private var showsCollapsedLyrics: Bool {
+        hasCollapsedLyricContent && vm.notchState == .closed && !vm.hideOnClosed
+            && coordinator.musicLiveActivityEnabled && !coordinator.helloAnimationRunning
+            && !coordinator.sneakPeek.show && agentMonitor.requests.isEmpty
+            && (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
+    }
+
+    private var showsLowerLyricStrip: Bool { showsCollapsedLyrics && lyricsPlacement == .belowNotch }
+    private var lowerLyricStripTopInset: CGFloat { max(0, vm.hardwareNotchHeight - vm.effectiveClosedNotchHeight) }
+    private var closedArtworkSize: CGFloat { min(26, max(0, vm.effectiveClosedNotchHeight - 12)) }
+
+    private var closedMusicCenterWidth: CGFloat {
+        if showsCollapsedLyrics {
+            let width = max(0, 440 - 2 * closedArtworkSize - 16 - 2 * cornerRadiusInsets.closed.bottom)
+            return vm.hasHardwareNotch ? max(vm.closedNotchSize.width, width) : width
+        }
+        if coordinator.expandingView.show && coordinator.expandingView.type == .music && Defaults[.sneakPeekStyles] == .inline {
+            return 380
+        }
+        if !vm.hasHardwareNotch {
+            return max(0, 230 - 2 * closedArtworkSize - 16 - 2 * cornerRadiusInsets.closed.bottom)
+        }
+        return vm.closedNotchSize.width - cornerRadiusInsets.closed.top
+    }
 
     private var topCornerRadius: CGFloat {
        ((vm.notchState == .open) && Defaults[.cornerRadiusScaling])
@@ -66,10 +105,10 @@ struct ContentView: View {
         {
             chinWidth = 640
         } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
-            && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle)
+            && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle || hasCollapsedLyricContent)
             && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed
         {
-            chinWidth += (2 * max(0, vm.effectiveClosedNotchHeight - 12) + 20)
+            chinWidth = closedMusicCenterWidth + 2 * closedArtworkSize + 16 + 2 * cornerRadiusInsets.closed.bottom
         } else if !coordinator.expandingView.show && vm.notchState == .closed
             && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace]
             && !vm.hideOnClosed
@@ -186,7 +225,21 @@ struct ContentView: View {
                         //                    }
                         //                    .keyboardShortcut("E", modifiers: .command)
                     }
-                if vm.chinHeight > 0 {
+                VStack(spacing: 0) {
+                    if showsLowerLyricStrip {
+                        Color.clear.frame(height: lowerLyricStripTopInset)
+                        CollapsedLyricsView(fontSize: 12)
+                            .frame(width: 272, height: 24)
+                            .transition(.opacity)
+                    }
+                }
+                .frame(width: 300, height: showsLowerLyricStrip ? 24 + lowerLyricStripTopInset : 0)
+                .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 12, bottomTrailingRadius: 12))
+                .clipped()
+                .animation(.easeInOut(duration: reduceMotion ? 0.1 : 0.25), value: showsLowerLyricStrip)
+                .onHover { handleHover($0) }
+                .onTapGesture { doOpen() }
+                if vm.chinHeight > 0 && !showsLowerLyricStrip {
                     Rectangle()
                         .fill(Color.black.opacity(0.01))
                         .frame(width: computedChinWidth, height: vm.chinHeight)
@@ -278,7 +331,7 @@ struct ContentView: View {
                       } else if coordinator.sneakPeek.show && Defaults[.inlineHUD] && (coordinator.sneakPeek.type != .music) && (coordinator.sneakPeek.type != .battery) && vm.notchState == .closed {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
-                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
+                      } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle || hasCollapsedLyricContent) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
                           MusicLiveActivity()
                               .frame(alignment: .center)
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
@@ -392,7 +445,7 @@ struct ContentView: View {
 
     @ViewBuilder
     func MusicLiveActivity() -> some View {
-        HStack {
+        HStack(spacing: 8) {
             Image(nsImage: musicManager.albumArt)
                 .resizable()
                 .clipped()
@@ -402,15 +455,17 @@ struct ContentView: View {
                 )
                 .matchedGeometryEffect(id: "albumArt", in: albumArtNamespace)
                 .frame(
-                    width: max(0, vm.effectiveClosedNotchHeight - 12),
-                    height: max(0, vm.effectiveClosedNotchHeight - 12)
+                    width: closedArtworkSize,
+                    height: closedArtworkSize
                 )
 
             Rectangle()
                 .fill(.black)
                 .overlay(
                     HStack(alignment: .top) {
-                        if coordinator.expandingView.show
+                        if showsCollapsedLyrics && lyricsPlacement == .inline {
+                            CollapsedLyricsView().frame(height: 20)
+                        } else if coordinator.expandingView.show
                             && coordinator.expandingView.type == .music
                         {
                             MarqueeText(
@@ -445,12 +500,7 @@ struct ContentView: View {
                     }
                 )
                 .frame(
-                    width: (coordinator.expandingView.show
-                        && coordinator.expandingView.type == .music
-                        && Defaults[.sneakPeekStyles] == .inline)
-                        ? 380
-                        : vm.closedNotchSize.width
-                            + -cornerRadiusInsets.closed.top
+                    width: closedMusicCenterWidth
                 )
 
             HStack {
@@ -464,23 +514,25 @@ struct ContentView: View {
                         .frame(width: 50, alignment: .center)
                         .matchedGeometryEffect(id: "spectrum", in: albumArtNamespace)
                         .mask {
-                            AudioSpectrumView(isPlaying: $musicManager.isPlaying)
+                            AudioSpectrumView(isPlaying: .constant(musicManager.isPlaying && !reduceMotion))
                                 .frame(width: 16, height: 12)
                         }
-                } else {
+                } else if musicManager.isPlaying && !reduceMotion {
                     LottieAnimationContainer()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    Image(systemName: "waveform").foregroundStyle(.gray)
                 }
             }
             .frame(
                 width: max(
                     0,
-                    vm.effectiveClosedNotchHeight - 12
+                    closedArtworkSize
                         + gestureProgress / 2
                 ),
                 height: max(
                     0,
-                    vm.effectiveClosedNotchHeight - 12
+                    closedArtworkSize
                 ),
                 alignment: .center
             )
@@ -489,6 +541,7 @@ struct ContentView: View {
             height: vm.effectiveClosedNotchHeight,
             alignment: .center
         )
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: closedMusicCenterWidth)
     }
 
     @ViewBuilder

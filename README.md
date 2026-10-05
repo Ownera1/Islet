@@ -31,10 +31,13 @@
 
 - Agent：Pi、Codex、Claude Code、ZCode、Antigravity。多会话状态、工具调用、任务进度、最近提问、Markdown 回复、来源窗口跳转。
 - 一次性工具审批和问题回答。Antigravity 当前为观察模式，审批仍由原应用处理。
+- Agent 页支持全部总览与五个框架切换，单行／双行样式可持久保存；名称始终完整显示，实时状态分组，审批到达时自动切到对应框架。
+- 自动切换显示器在首选屏断开时回退，重连后恢复；HUD 权限与媒体键拦截统一由 Helper 处理，失败时显示提示。
 - Claude、OpenAI、Google AI 三张额度卡片。Google AI 将 agy CLI 与 Antigravity 作为同一个共享额度池，每 5 分钟同步，显示剩余百分比、重置时间、读取来源和数据更新时间。
 - 设置中的三个独立可见性开关，立即生效并持久保存；隐藏卡片不影响后台同步。
 - Apple Music 自带歌词优先，缺失时严格匹配网易云歌曲并回退到 LRCLIB。支持 YRC／增强 LRC 逐字时间与普通 LRC 行级扫光，切歌取消旧查询。
 - Home 显示当前歌词和下一句预告；引号按钮切换歌词专注模式，日历保留原状态。专注歌词可点击跳转，手动滚动后 4 秒恢复跟随，设置中可微调时间偏移。
+- 收起态可选关闭、仅外接显示器或所有显示器显示歌词；无硬件刘海屏显示单句，内置刘海屏使用下方薄条，支持时间驱动的长句滚动和暂停压暗。默认仅在无硬件刘海屏显示。
 - 保留 boring.notch 的原生主页、媒体控制、日历、暂存器和隔空投送等功能。
 
 OpenAI 当前读取 Codex 配额；不代表网页聊天中所有模型的限制。Google AI 优先自动检测并静默读取 agy CLI，失败后读取已运行的 Antigravity 应用；同一共享池只展示一份额度，不相加或平均。Gemini CLI 不参与额度页面或后台轮询。两种 Google 来源均不可用时只显示文字提醒，Google AI 卡片不提供网页跳转。订阅卡片各自的显示开关在设置中保留。
@@ -54,6 +57,10 @@ swift test --package-path Packages/NotchIntegrations --scratch-path build/Integr
 ./scripts/test-pan-gesture.sh
 # 展开背景、顶部贴合和圆角裁剪渲染回归
 ./scripts/test-notch-surface.sh
+# Agent 框架状态与歌词组件渲染（先完成 Debug 构建和集成测试）
+./scripts/test-agent-lyrics.sh
+# HUD 失败、重试、修饰键与异步开关生命周期
+./scripts/test-hud-lifecycle.sh
 # 通用 Release 构建
 ./scripts/build-app.sh Release 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
 # 在已提交且干净的源码树上打包、验签、生成 SHA-256 和发布清单

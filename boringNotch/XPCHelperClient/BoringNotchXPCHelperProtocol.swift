@@ -16,6 +16,9 @@ import Foundation
     func agentConnectionStatus(_ claudeHome: String, codexHome: String, with reply: @escaping ([String]) -> Void)
     func subscriptionUsage(_ source: String, claudeHome: String, codexHome: String, with reply: @escaping (Data?, String?) -> Void)
 
+    func startMediaKeyEvents(with reply: @escaping (Bool, String?) -> Void)
+    func stopMediaKeyEvents()
+
     func isAccessibilityAuthorized(with reply: @escaping (Bool) -> Void)
     func requestAccessibilityAuthorization()
     func ensureAccessibilityAuthorization(_ promptIfNeeded: Bool, with reply: @escaping (Bool) -> Void)
@@ -29,3 +32,7 @@ import Foundation
     func setScreenBrightness(_ value: Float, with reply: @escaping (Bool) -> Void)
 }
 
+
+@objc protocol NotchMediaKeyCallbacks {
+    func mediaKeyDown(_ keyCode: Int, modifiers: UInt)
+}

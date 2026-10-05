@@ -11,11 +11,12 @@ import IOKit
 import CoreGraphics
 
 class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
+    let mediaKeys = MediaKeyEventTap()
     weak var connection: NSXPCConnection?
     @MainActor lazy var integration = IntegrationHost()
     
     @objc func isAccessibilityAuthorized(with reply: @escaping (Bool) -> Void) {
-        reply(AXIsProcessTrusted())
+        DispatchQueue.main.async { reply(MediaKeyEventTap.canIntercept) }
     }
 
     @objc func requestAccessibilityAuthorization() {
@@ -24,20 +25,35 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
     }
 
     @objc func ensureAccessibilityAuthorization(_ promptIfNeeded: Bool, with reply: @escaping (Bool) -> Void) {
-        if AXIsProcessTrusted() {
-            reply(true)
-            return
-        }
-
-        if promptIfNeeded {
-            requestAccessibilityAuthorization()
-        }
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            reply(AXIsProcessTrusted())
+        DispatchQueue.main.async {
+            if MediaKeyEventTap.canIntercept { reply(true); return }
+            if promptIfNeeded { self.requestAccessibilityAuthorization() }
+            reply(false)
         }
     }
-    
+
+    @objc func startMediaKeyEvents(with reply: @escaping (Bool, String?) -> Void) {
+        DispatchQueue.main.async {
+            guard let connection = self.connection else {
+                reply(false, "HUD Helper 连接已中断，请重试。")
+                return
+            }
+            connection.remoteObjectInterface = NSXPCInterface(with: NotchMediaKeyCallbacks.self)
+            self.mediaKeys.onKeyDown = { [weak connection, weak self] code, modifiers in
+                guard let client = connection?.remoteObjectProxyWithErrorHandler({ _ in
+                    DispatchQueue.main.async { self?.mediaKeys.stop() }
+                }) as? NotchMediaKeyCallbacks else { return }
+                client.mediaKeyDown(code, modifiers: modifiers)
+            }
+            let started = self.mediaKeys.start()
+            reply(started, started ? nil : "无法拦截媒体键。请在系统设置 → 隐私与安全性 → 辅助功能中重新启用 Islet，然后重试。")
+        }
+    }
+
+    @objc func stopMediaKeyEvents() {
+        DispatchQueue.main.async { self.mediaKeys.stop() }
+    }
+
     private class KeyboardBrightnessClient {
         private static let keyboardID: UInt64 = 1
         private var clientInstance: NSObject?

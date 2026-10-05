@@ -4,12 +4,20 @@ import NotchIntegrationCore
 
 struct IntegrationSettingsView: View {
     @ObservedObject private var installer = AgentInstaller.shared
+    @Default(.agentOverviewStyle) private var overviewStyle
     @ObservedObject private var monitor = AgentMonitor.shared
     @AppStorage("subscriptionSyncEnabled") private var syncEnabled = true
     @AppStorage("integrationClaudeHome") private var claudeHome = HomePaths.userHome + "/.claude"
     @AppStorage("integrationCodexHome") private var codexHome = HomePaths.userHome + "/.codex"
     var body: some View {
         Form {
+            Section("Agent 显示") {
+                Picker("Agent 总览样式", selection: $overviewStyle) {
+                    Text("单行").tag(AgentOverviewStyle.singleLine)
+                    Text("双行").tag(AgentOverviewStyle.twoLine)
+                }.pickerStyle(.segmented)
+                Text("名称始终完整显示；任务描述超长时省略。切换样式会立即生效。").font(.caption).foregroundStyle(.secondary)
+            }
             Section("Agent 连接") {
                 ForEach(NotchAgent.allCases) { agent in
                     HStack {

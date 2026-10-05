@@ -25,6 +25,10 @@ for TASK_RELATIVE in \
   build/IntegrationPackage \
   build/GestureModuleCache \
   build/SurfaceModuleCache \
+  build/AgentLyricsModuleCache \
+  build/HUDModuleCache \
+  build/AgentLyricsRenderingTests \
+  build/HUDLifecycleTests \
   build/NotchSurfaceTests \
   build/OldNotchSurfaceTests \
   build/ScrollPanTests \

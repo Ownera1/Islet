@@ -9,6 +9,7 @@ import AVFoundation
 import Combine
 import Defaults
 import KeyboardShortcuts
+import NotchIntegrationCore
 import Sparkle
 import SwiftUI
 
@@ -71,7 +72,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var whatsNewWindow: NSWindow?
     var timer: Timer?
     var closeNotchTask: Task<Void, Never>?
-    private var previousScreens: [NSScreen]?
+    private var previousScreenFrames: [String: NSRect] = [:]
     private var onboardingWindowController: NSWindowController?
     private var screenLockedObserver: Any?
     private var screenUnlockedObserver: Any?
@@ -269,8 +270,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowScreenDidChangeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.didChangeScreenNotification,
             object: window,
-            queue: .main) { [weak self] _ in
+            queue: .main) { [weak self, weak window, weak viewModel] _ in
                 Task { @MainActor in
+                    viewModel?.screenUUID = window?.screen?.displayUUID
                     self?.setupDragDetectors()
                 }
         }
@@ -324,9 +326,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(
             forName: Notification.Name.automaticallySwitchDisplayChanged, object: nil, queue: nil
         ) { [weak self] _ in
-            guard let self = self, let window = self.window else { return }
             Task { @MainActor in
-                window.alphaValue = self.coordinator.selectedScreenUUID == self.coordinator.preferredScreenUUID ? 1 : 0
+                self?.adjustWindowPosition(changeAlpha: true)
+                self?.setupDragDetectors()
             }
         }
 
@@ -450,7 +452,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        previousScreens = NSScreen.screens
+        previousScreenFrames = screenFrames()
     }
 
     func playWelcomeSound() {
@@ -469,16 +471,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
+    private func screenFrames() -> [String: NSRect] {
+        Dictionary(uniqueKeysWithValues: NSScreen.screens.compactMap { screen in
+            screen.displayUUID.map { ($0, screen.frame) }
+        })
+    }
+
     @objc func screenConfigurationDidChange() {
-        let currentScreens = NSScreen.screens
-
-        let screensChanged =
-            currentScreens.count != previousScreens?.count
-            || Set(currentScreens.compactMap { $0.displayUUID })
-                != Set(previousScreens?.compactMap { $0.displayUUID } ?? [])
-            || Set(currentScreens.map { $0.frame }) != Set(previousScreens?.map { $0.frame } ?? [])
-
-        previousScreens = currentScreens
+        // Save geometry values, rather than NSScreen objects whose properties can change.
+        let currentFrames = screenFrames()
+        let screensChanged = currentFrames != previousScreenFrames
+        previousScreenFrames = currentFrames
 
         if screensChanged {
             DispatchQueue.main.async { [weak self] in
@@ -524,21 +527,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         } else {
-            let selectedScreen: NSScreen
-
-            if let preferredScreen = NSScreen.screen(withUUID: coordinator.preferredScreenUUID ?? "") {
-                coordinator.selectedScreenUUID = coordinator.preferredScreenUUID ?? ""
-                selectedScreen = preferredScreen
-            } else if Defaults[.automaticallySwitchDisplay], let mainScreen = NSScreen.main,
-                      let mainUUID = mainScreen.displayUUID {
-                coordinator.selectedScreenUUID = mainUUID
-                selectedScreen = mainScreen
-            } else {
-                if let window = window {
-                    window.alphaValue = 0
-                }
+            let screens = NSScreen.screens
+            guard let uuid = DisplaySelection.resolve(
+                preferred: coordinator.preferredScreenUUID,
+                available: screens.compactMap { $0.displayUUID },
+                main: NSScreen.main?.displayUUID,
+                automaticallySwitch: Defaults[.automaticallySwitchDisplay]
+            ), let selectedScreen = screens.first(where: { $0.displayUUID == uuid }) else {
+                window?.alphaValue = 0
                 return
             }
+            coordinator.selectedScreenUUID = uuid
 
             vm.screenUUID = selectedScreen.displayUUID
             vm.notchSize = getClosedNotchSize(screenUUID: selectedScreen.displayUUID)

@@ -2,7 +2,7 @@ import Foundation
 import Cocoa
 import AsyncXPCConnection
 
-final class XPCHelperClient: NSObject {
+final class XPCHelperClient: NSObject, NotchMediaKeyCallbacks {
     nonisolated static let shared = XPCHelperClient()
     
     private let serviceName = "com.ownera1.agentusagenotch.helper"
@@ -10,6 +10,8 @@ final class XPCHelperClient: NSObject {
     private var remoteService: RemoteXPCService<BoringNotchXPCHelperProtocol>?
     private var connection: NSXPCConnection?
     private var lastKnownAuthorization: Bool?
+    @MainActor var onMediaKeyDown: ((Int, UInt) -> Void)?
+    @MainActor var onMediaDisconnect: (() -> Void)?
     private var monitoringTask: Task<Void, Never>?
     
     deinit {
@@ -29,6 +31,7 @@ final class XPCHelperClient: NSObject {
         
         conn.interruptionHandler = { [weak self] in
             Task { @MainActor in
+                self?.onMediaDisconnect?()
                 self?.connection = nil
                 self?.remoteService = nil
             }
@@ -36,11 +39,14 @@ final class XPCHelperClient: NSObject {
         
         conn.invalidationHandler = { [weak self] in
             Task { @MainActor in
+                self?.onMediaDisconnect?()
                 self?.connection = nil
                 self?.remoteService = nil
             }
         }
         
+        conn.exportedInterface = NSXPCInterface(with: NotchMediaKeyCallbacks.self)
+        conn.exportedObject = self
         conn.resume()
         
         let service = RemoteXPCService<BoringNotchXPCHelperProtocol>(
@@ -146,6 +152,27 @@ final class XPCHelperClient: NSObject {
         }
     }
     
+    nonisolated func mediaKeyDown(_ keyCode: Int, modifiers: UInt) {
+        Task { @MainActor in self.onMediaKeyDown?(keyCode, modifiers) }
+    }
+
+    @MainActor func startMediaKeyEvents() async -> (Bool, String?) {
+        do {
+            let service = ensureRemoteService()
+            return try await service.withContinuation { service, continuation in
+                service.startMediaKeyEvents { started, message in
+                    continuation.resume(returning: (started, message))
+                }
+            }
+        } catch {
+            return (false, "HUD Helper 连接失败：" + error.localizedDescription)
+        }
+    }
+
+    @MainActor func stopMediaKeyEvents() {
+        (connection?.remoteObjectProxy as? BoringNotchXPCHelperProtocol)?.stopMediaKeyEvents()
+    }
+
     // MARK: - Keyboard Brightness
     
     nonisolated func isKeyboardBrightnessAvailable() async -> Bool {

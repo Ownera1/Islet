@@ -10,6 +10,7 @@ import Defaults
 import EventKit
 import KeyboardShortcuts
 import LaunchAtLogin
+import NotchIntegrationCore
 import Sparkle
 import SwiftUI
 import SwiftUIIntrospect
@@ -187,6 +188,7 @@ struct GeneralSettings: View {
                 
                 Defaults.Toggle(key: .automaticallySwitchDisplay) {
                     Text("Automatically switch displays")
+                        .help("首选显示器断开时切到可用显示器，重新连接后自动切回。")
                 }
                     .onChange(of: automaticallySwitchDisplay) {
                         NotificationCenter.default.post(
@@ -474,6 +476,7 @@ struct HUD: View {
     @Default(.optionKeyAction) var optionKeyAction
     @Default(.hudReplacement) var hudReplacement
     @ObservedObject var coordinator = BoringViewCoordinator.shared
+    @ObservedObject private var interceptor = MediaKeyInterceptor.shared
     @State private var accessibilityAuthorized = false
     
     var body: some View {
@@ -493,9 +496,14 @@ struct HUD: View {
                     .labelsHidden()
                     .toggleStyle(.switch)
                     .controlSize(.large)
-                    .disabled(!accessibilityAuthorized)
+
                 }
                 
+                if let message = interceptor.errorMessage {
+                    Text(message).font(.caption).foregroundStyle(.orange).textSelection(.enabled)
+                } else if interceptor.isRunning {
+                    Label("HUD 已启用", systemImage: "checkmark.circle").font(.caption).foregroundStyle(.green)
+                }
                 if !accessibilityAuthorized {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Accessibility access is required to replace the system HUD.")
@@ -505,6 +513,7 @@ struct HUD: View {
                         HStack(spacing: 12) {
                             Button("Request Accessibility") {
                                 XPCHelperClient.shared.requestAccessibilityAuthorization()
+                                NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                             }
                             .buttonStyle(.borderedProminent)
                         }
@@ -606,6 +615,7 @@ struct Media: View {
 
     @Default(.enableLyrics) var enableLyrics
     @Default(.lyricsTimeOffset) private var lyricsTimeOffset
+    @Default(.collapsedLyricsMode) private var collapsedLyricsMode
 
     var body: some View {
         Form {
@@ -691,6 +701,14 @@ struct Media: View {
                         customBadge(text: "Beta")
                     }
                 }
+                Picker("收起时显示歌词", selection: $collapsedLyricsMode) {
+                    ForEach(CollapsedLyricsMode.allCases, id: \.self) { mode in
+                        Text(mode.name).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .disabled(!enableLyrics)
+                CollapsedLyricsSettingsPreview(mode: collapsedLyricsMode, enabled: enableLyrics)
                 Defaults.Toggle(key: .autoLyricsFocusWhenCalendarEmpty) {
                     Text("日程为空时自动进入歌词专注模式")
                 }

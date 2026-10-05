@@ -32,7 +32,11 @@ class BoringViewModel: NSObject, ObservableObject {
     @Published var isHoveringCalendar: Bool = false
     @Published var isBatteryPopoverActive: Bool = false
 
-    @Published var screenUUID: String?
+    @Published var screenUUID: String? {
+        didSet { refreshScreenGeometry() }
+    }
+    @Published private(set) var hardwareNotchHeight: CGFloat = 0
+    var hasHardwareNotch: Bool { hardwareNotchHeight > 0 }
 
     @Published var notchSize: CGSize = getClosedNotchSize()
     @Published var closedNotchSize: CGSize = getClosedNotchSize()
@@ -58,6 +62,11 @@ class BoringViewModel: NSObject, ObservableObject {
         self.screenUUID = screenUUID
         notchSize = getClosedNotchSize(screenUUID: screenUUID)
         closedNotchSize = notchSize
+        refreshScreenGeometry()
+        NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in self?.refreshScreenGeometry() }
+            .store(in: &cancellables)
 
         Publishers.CombineLatest3($dropZoneTargeting, $dragDetectorTargeting, $generalDropTargeting)
             .map { shelf, drag, general in
@@ -71,6 +80,13 @@ class BoringViewModel: NSObject, ObservableObject {
             self.notchSize = openNotchSize(for: view)
         }.store(in: &cancellables)
         setupDetectorObserver()
+    }
+
+    private func refreshScreenGeometry() {
+        let screen = screenUUID.flatMap { uuid in NSScreen.screens.first { $0.displayUUID == uuid } } ?? NSScreen.main
+        hardwareNotchHeight = screen?.safeAreaInsets.top ?? 0
+        closedNotchSize = getClosedNotchSize(screenUUID: screenUUID)
+        if notchState == .closed { notchSize = closedNotchSize }
     }
     
     private func setupDetectorObserver() {

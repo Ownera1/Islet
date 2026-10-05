@@ -6,13 +6,12 @@
 
 import Foundation
 import AppKit
-import ApplicationServices
+import Combine
 import Defaults
 import AVFoundation
 
-private let kSystemDefinedEventType = CGEventType(rawValue: 14)!
-
-final class MediaKeyInterceptor {
+@MainActor
+final class MediaKeyInterceptor: ObservableObject {
     static let shared = MediaKeyInterceptor()
     
     private enum NXKeyType: Int {
@@ -25,8 +24,10 @@ final class MediaKeyInterceptor {
         case keyboardBrightnessDown = 22
     }
     
-    private var eventTap: CFMachPort?
-    private var runLoopSource: CFRunLoopSource?
+    @Published private(set) var errorMessage: String?
+    @Published private(set) var isRunning = false
+    private var generation = 0
+    private var isStarting = false
     private let step: Float = 1.0 / 16.0
     private var audioPlayer: AVAudioPlayer?
     
@@ -42,102 +43,61 @@ final class MediaKeyInterceptor {
         await XPCHelperClient.shared.ensureAccessibilityAuthorization(promptIfNeeded: promptIfNeeded)
     }
     
-    // MARK: - Event Tap
-    
+    // MARK: - Helper media key events
+
     func start(promptIfNeeded: Bool = false) async {
-        guard eventTap == nil else { return }
-        
-        // Ensure HUD replacement is enabled
-        guard Defaults[.hudReplacement] else {
-            stop()
+        guard Defaults[.hudReplacement], !isRunning, !isStarting else { return }
+        isStarting = true
+        let request = generation
+        defer { if request == generation { isStarting = false } }
+        errorMessage = nil
+        if promptIfNeeded { _ = await ensureAccessibilityAuthorization(promptIfNeeded: true) }
+        guard request == generation, Defaults[.hudReplacement], !Task.isCancelled else { return }
+        let client = XPCHelperClient.shared
+        client.onMediaKeyDown = { [weak self] code, modifiers in
+            guard Defaults[.hudReplacement], self?.isRunning == true else { return }
+            self?.handleEvent(keyCode: code, modifiers: modifiers)
+        }
+        client.onMediaDisconnect = { [weak self] in
+            guard let self else { return }
+            self.isRunning = false
+            if Defaults[.hudReplacement] {
+                self.errorMessage = "HUD Helper 连接已中断，请重新开启 HUD。"
+                Defaults[.hudReplacement] = false
+            }
+        }
+        let result = await client.startMediaKeyEvents()
+        guard request == generation, Defaults[.hudReplacement], !Task.isCancelled else {
+            // A later enable owns the same tap; its queued start/stop order is preserved.
+            if !Defaults[.hudReplacement] { client.stopMediaKeyEvents() }
             return
         }
-        
-        // Check accessibility authorization
-        let authorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
-        if !authorized {
-            if promptIfNeeded {
-                let granted = await ensureAccessibilityAuthorization(promptIfNeeded: true)
-                guard granted else { return }
-            } else {
-                return
-            }
-        }
-        
-        let mask = CGEventMask(1 << kSystemDefinedEventType.rawValue)
-        eventTap = CGEvent.tapCreate(
-            tap: .cghidEventTap,
-            place: .headInsertEventTap,
-            options: .defaultTap,
-            eventsOfInterest: mask,
-            callback: { _, _, cgEvent, userInfo in
-                guard let userInfo else { return Unmanaged.passRetained(cgEvent) }
-                let interceptor = Unmanaged<MediaKeyInterceptor>.fromOpaque(userInfo).takeUnretainedValue()
-                return interceptor.handleEvent(cgEvent)
-            },
-            userInfo: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque())
-        )
-        
-        if let eventTap {
-            runLoopSource = CFMachPortCreateRunLoopSource(kCFAllocatorDefault, eventTap, 0)
-            if let runLoopSource {
-                CFRunLoopAddSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-            }
-            CGEvent.tapEnable(tap: eventTap, enable: true)
+        isRunning = result.0
+        if !result.0 {
+            errorMessage = result.1 ?? "无法启动 HUD 媒体键拦截。"
+            Defaults[.hudReplacement] = false
         }
     }
-    
+
     func stop() {
-        if let eventTap {
-            CGEvent.tapEnable(tap: eventTap, enable: false)
-        }
-        if let runLoopSource {
-            CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
-        }
-        runLoopSource = nil
-        eventTap = nil
+        generation += 1
+        isStarting = false
+        isRunning = false
+        XPCHelperClient.shared.onMediaKeyDown = nil
+        // Queue stop immediately so a subsequent start cannot overtake it.
+        XPCHelperClient.shared.stopMediaKeyEvents()
     }
-    
-    // MARK: - Event Handling
-    
-    private func handleEvent(_ cgEvent: CGEvent) -> Unmanaged<CGEvent>? {
-        // Ensure the CGEvent has a valid type before converting to NSEvent
-        guard cgEvent.type != .null else {
-            return Unmanaged.passRetained(cgEvent)
-        }
-        guard let nsEvent = NSEvent(cgEvent: cgEvent),
-              nsEvent.type == .systemDefined,
-              nsEvent.subtype.rawValue == 8 else {
-            return Unmanaged.passRetained(cgEvent)
-        }
-        
-        let data1 = nsEvent.data1
-        let keyCode = (data1 & 0xFFFF_0000) >> 16
-        let stateByte = ((data1 & 0xFF00) >> 8)
-        
-        // 0xA = key down, 0xB = key up. Only handle key down.
-        guard stateByte == 0xA,
-              let keyType = NXKeyType(rawValue: keyCode) else {
-            return Unmanaged.passRetained(cgEvent)
-        }
-        
-        let flags = nsEvent.modifierFlags
+
+    private func handleEvent(keyCode: Int, modifiers: UInt) {
+        guard let keyType = NXKeyType(rawValue: keyCode) else { return }
+        let flags = NSEvent.ModifierFlags(rawValue: modifiers)
         let option = flags.contains(.option)
         let shift = flags.contains(.shift)
         let command = flags.contains(.command)
-        
-        // Handle option key action (without shift)
-        if option && !shift {
-            if handleOptionAction(for: keyType, command: command) {
-                return nil
-            }
-        }
-        
-        // Handle normal key press
+        if option && !shift && handleOptionAction(for: keyType, command: command) { return }
         handleKeyPress(keyType: keyType, option: option, shift: shift, command: command)
-        return nil
     }
-    
+
     private func handleOptionAction(for keyType: NXKeyType, command: Bool) -> Bool {
         let action = Defaults[.optionKeyAction]
         

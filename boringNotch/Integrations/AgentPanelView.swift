@@ -1,73 +1,297 @@
 import SwiftUI
+import Defaults
 import CodeIslandCore
 import NotchIntegrationCore
 
+extension AgentOverviewStyle: Defaults.Serializable {}
+extension Defaults.Keys {
+    static let agentOverviewStyle = Key<AgentOverviewStyle>("agentOverviewStyle", default: .twoLine)
+}
+
 struct AgentPanelView: View {
-    @ObservedObject private var monitor = AgentMonitor.shared
+    @ObservedObject var monitor: AgentMonitor = .shared
+    @Default(.agentOverviewStyle) private var overviewStyle
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State var menuOpen = false
+
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("Agent").font(.headline)
-                    Spacer()
-                    Menu {
-                        Button("全部工具") { monitor.filter = nil }
-                        ForEach(NotchAgent.allCases) { agent in Button(agent.name) { monitor.filter = agent } }
-                    } label: { Image(systemName: "line.3.horizontal.decrease") }
-                    .menuStyle(.borderlessButton).frame(width: 20)
-                    .help("筛选工具")
-                }
-                if monitor.sortedSessions.isEmpty {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("等待会话").foregroundStyle(.white)
-                        Text("在设置中连接工具后，启动一次新会话。").foregroundStyle(.gray)
-                        Button("连接工具") { SettingsWindowController.shared.showWindow() }
-                    }.font(.caption)
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 4) {
-                            ForEach(monitor.sortedSessions, id: \.id) { row in
-                                Button {
-                                    monitor.selectedSessionID = row.id
-                                } label: {
-                                    HStack(spacing: 7) {
-                                        Image(systemName: statusIcon(row.snapshot.status)).foregroundStyle(statusColor(row.snapshot.status))
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(NotchAgent(rawValue: row.snapshot.source)?.name ?? row.snapshot.source).font(.caption.weight(.semibold))
-                                            Text(project(row.snapshot)).font(.caption2).foregroundStyle(.gray).lineLimit(1)
-                                        }
-                                        Spacer(minLength: 0)
-                                    }
-                                    .padding(7).frame(maxWidth: .infinity, alignment: .leading)
-                                    .background(monitor.selected?.id == row.id ? Color.white.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 8))
-                                    .contentShape(Rectangle())
-                                }.buttonStyle(.plain)
-                                .accessibilityLabel("\(NotchAgent(rawValue: row.snapshot.source)?.name ?? row.snapshot.source)，\(project(row.snapshot))，\(statusLabel(row.snapshot.status))")
+        ZStack(alignment: .topLeading) {
+            HStack(alignment: .top, spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Button {
+                        withAnimation(.easeOut(duration: reduceMotion ? 0 : 0.15)) { menuOpen.toggle() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            if let agent = monitor.selectedAgent {
+                                Circle().fill(agent.accentColor).frame(width: 8, height: 8)
+                            } else {
+                                Image(systemName: "square.grid.2x2").foregroundStyle(.gray)
                             }
+                            Text(monitor.selectedAgent?.name ?? "全部 Agent")
+                                .font(.system(size: 16, weight: .medium)).fixedSize()
+                            Image(systemName: "chevron.down").font(.system(size: 11)).foregroundStyle(.gray)
+                        }.padding(.vertical, 3).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    .accessibilityLabel("切换 Agent，当前\(monitor.selectedAgent?.name ?? "全部 Agent")")
+                    .accessibilityValue(menuOpen ? "已展开" : "已收起")
+                    .help("切换 Agent")
+
+                    if let agent = monitor.selectedAgent {
+                        singleSummary(agent)
+                    } else {
+                        overviewSummary
+                    }
+                    Spacer(minLength: 0)
+                }.frame(width: 212, alignment: .topLeading)
+                Divider().overlay(.white.opacity(0.12))
+                VStack(alignment: .leading, spacing: 8) {
+                    Group {
+                        if monitor.selectedAgent == nil {
+                            overview
+                        } else if let selected = monitor.selected {
+                            AgentSessionDetail(id: selected.id, snapshot: selected.snapshot, monitor: monitor)
+                        } else {
+                            VStack(spacing: 8) {
+                                Image(systemName: "terminal").font(.system(size: 24)).foregroundStyle(Color(white: 0.3))
+                                Text("连接 Agent 后，任务会显示在这里").font(.caption).foregroundStyle(.gray)
+                            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                    .id(monitor.selectedAgent?.rawValue ?? "all")
+                    .transition(reduceMotion ? .opacity : .opacity.combined(with: .offset(y: 3)))
+                    HStack(spacing: 6) {
+                        Circle().fill(monitor.isServiceReady ? Color.agentRunning : .gray).frame(width: 6, height: 6)
+                            .accessibilityHidden(true)
+                        Text(monitor.serviceStatus).font(.system(size: 11)).foregroundStyle(.gray)
+                    }.padding(.bottom, 2)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
+            if menuOpen {
+                Color.clear.contentShape(Rectangle()).onTapGesture { menuOpen = false }
+                AgentSwitcher(monitor: monitor) { menuOpen = false }
+                    .frame(width: 212).transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: reduceMotion ? 0 : 0.25), value: monitor.selectedAgent)
+        .frame(maxWidth: .infinity, maxHeight: .infinity).foregroundStyle(.white)
+        .onExitCommand { menuOpen = false }
+    }
+
+    private var overviewSummary: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            summaryLine(.running, count: monitor.overview.filter { $0.state == .running }.count)
+            summaryLine(.idle, count: monitor.overview.filter { $0.state == .idle }.count)
+            summaryLine(.offline, count: monitor.overview.filter { $0.state == .offline }.count)
+            Text("选择右侧 Agent 查看任务详情").font(.system(size: 11)).foregroundStyle(.gray).padding(.top, 4)
+        }
+    }
+    private func summaryLine(_ state: AgentConnectionState, count: Int) -> some View {
+        HStack(spacing: 7) {
+            Circle().fill(state.color).frame(width: 7, height: 7)
+            Text("\(count) 个\(state.label)").font(.system(size: 13))
+        }.accessibilityElement(children: .combine)
+    }
+    @ViewBuilder private func singleSummary(_ agent: NotchAgent) -> some View {
+        if let entry = monitor.overview.first(where: { $0.agent == agent }), let snapshot = monitor.selected?.snapshot ?? entry.snapshot {
+            HStack(spacing: 6) {
+                Circle().fill(entry.state.color).frame(width: 7, height: 7)
+                Text(entry.state.label).font(.system(size: 13, weight: .medium))
+            }
+            Text(AgentOverviewEntry.entries(sessions: ["selected": snapshot]).first(where: { $0.agent == agent })?.subtitle ?? entry.subtitle).font(.caption).foregroundStyle(.gray).lineLimit(2)
+            if let selected = monitor.selected, let cwd = selected.snapshot.cwd {
+                Text((cwd as NSString).lastPathComponent).font(.caption).foregroundStyle(.gray).lineLimit(1).help(cwd)
+            }
+            if entry.state == .running {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    let seconds = max(0, Int(context.date.timeIntervalSince(snapshot.startTime)))
+                    Text("会话时长 \(seconds / 60)m \(seconds % 60)s")
+                        .font(.system(size: 11).monospacedDigit()).foregroundStyle(.gray)
+                }
+            }
+            if monitor.sortedSessions.count > 1 {
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(monitor.sortedSessions, id: \.id) { row in
+                            Button { monitor.selectedSessionID = row.id } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: statusIcon(row.snapshot.status)).foregroundStyle(statusColor(row.snapshot.status))
+                                    Text(row.snapshot.cwd.map { ($0 as NSString).lastPathComponent } ?? "会话").lineLimit(1)
+                                    Spacer(minLength: 0)
+                                }.font(.caption).padding(7)
+                                .background(monitor.selected?.id == row.id ? .white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                            }.buttonStyle(.plain)
                         }
                     }
                 }
-            }.frame(width: 152)
-            Divider().overlay(.white.opacity(0.12))
-            if let selected = monitor.selected {
-                AgentSessionDetail(id: selected.id, snapshot: selected.snapshot)
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("让任务进展留在视线里", systemImage: "terminal").font(.headline)
-                    Text("Pi · Codex · Claude Code · ZCode · Antigravity").font(.caption).foregroundStyle(.gray)
-                    Text(monitor.serviceStatus).font(.caption2).foregroundStyle(.gray)
-                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
+        } else {
+            AgentFrameworkEmptyState(agent: agent) { SettingsWindowController.shared.showWindow() }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity).foregroundStyle(.white)
     }
-    private func project(_ snapshot: SessionSnapshot) -> String { snapshot.cwd.map { ($0 as NSString).lastPathComponent } ?? "会话" }
+    @ViewBuilder private var overview: some View {
+        if monitor.connectedAgents.isEmpty {
+            VStack(spacing: 8) {
+                Image(systemName: "terminal").font(.system(size: 24)).foregroundStyle(Color(white: 0.3))
+                Text("还没有已连接的 Agent").font(.caption).foregroundStyle(.gray)
+                Button("连接 Agent") { SettingsWindowController.shared.showWindow() }.buttonStyle(.bordered)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ScrollView {
+                VStack(spacing: 2) {
+                    ForEach(monitor.connectedAgents) { entry in
+                        AgentOverviewRow(entry: entry, style: overviewStyle) { monitor.selectedAgent = entry.agent }
+                    }
+                }
+            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
 }
 
+struct AgentOverviewRow: View {
+    let entry: AgentOverviewEntry
+    let style: AgentOverviewStyle
+    let select: () -> Void
+    @State private var hovered = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    var body: some View {
+        Button(action: select) {
+            HStack(spacing: 10) {
+                if style == .twoLine {
+                    RoundedRectangle(cornerRadius: 2).fill(entry.agent.accentColor).frame(width: 3, height: 24)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(entry.agent.name).font(.system(size: 13, weight: .medium)).fixedSize()
+                        Text(entry.subtitle).font(.system(size: 11)).foregroundStyle(.gray).lineLimit(1)
+                    }.frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Circle().fill(entry.agent.accentColor).frame(width: 7, height: 7)
+                    Text(entry.agent.name).font(.system(size: 13, weight: .medium)).fixedSize()
+                    Text(entry.subtitle).font(.system(size: 12)).foregroundStyle(.gray)
+                        .lineLimit(1).frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                Group {
+                    if entry.state == .running {
+                        AgentActivityIndicator(reduceMotion: reduceMotion)
+                    } else { Color.clear }
+                }.frame(width: 15, height: 15)
+            }.padding(.horizontal, 6).frame(height: style == .twoLine ? 40 : 32)
+                .background(hovered ? Color(white: 0.067) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovered = $0 }
+        .accessibilityLabel("\(entry.agent.name)，\(entry.state.label)，\(entry.subtitle)")
+        .help("\(entry.agent.name)：\(entry.subtitle)")
+    }
+}
+
+private struct AgentActivityIndicator: View {
+    let reduceMotion: Bool
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: reduceMotion)) { context in
+            Circle().trim(from: 0.05, to: 0.80)
+                .stroke(Color.agentRunning, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .frame(width: 12, height: 12)
+                .rotationEffect(.degrees(reduceMotion ? 0 : context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1) * 360))
+        }.accessibilityHidden(true)
+    }
+}
+
+private struct AgentMenuBottom: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+struct AgentSwitcher: View {
+    @ObservedObject var monitor: AgentMonitor
+    let close: () -> Void
+    @State private var atBottom = false
+    var body: some View {
+        VStack(spacing: 3) {
+            row(nil, state: nil)
+            Divider().overlay(.white.opacity(0.12)).padding(.horizontal, 6)
+            ScrollView {
+                VStack(spacing: 1) {
+                    ForEach(Array(monitor.overview.enumerated()), id: \.element.id) { index, entry in
+                        if index > 0, monitor.overview[index - 1].state != entry.state {
+                            Divider().overlay(.white.opacity(0.12)).padding(.horizontal, 6).padding(.vertical, 2)
+                        }
+                        row(entry.agent, state: entry.state)
+                    }
+                }.background(GeometryReader { geometry in
+                    Color.clear.preference(key: AgentMenuBottom.self, value: geometry.frame(in: .named("agent-menu")).maxY)
+                })
+            }.coordinateSpace(name: "agent-menu").frame(height: 98)
+            .onPreferenceChange(AgentMenuBottom.self) { atBottom = $0 <= 99 }
+            .mask {
+                LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.80),
+                                       .init(color: atBottom ? .black : .clear, location: 1)], startPoint: .top, endPoint: .bottom)
+            }
+        }.padding(4).background(Color(white: 0.06), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(.white.opacity(0.16), lineWidth: 1))
+    }
+    private func row(_ agent: NotchAgent?, state: AgentConnectionState?) -> some View {
+        AgentMenuRow(name: agent?.name ?? "全部 Agent", color: agent?.accentColor, state: state,
+                     selected: monitor.selectedAgent == agent) {
+            monitor.selectedAgent = agent
+            close()
+        }
+    }
+}
+private struct AgentMenuRow: View {
+    let name: String
+    let color: Color?
+    let state: AgentConnectionState?
+    let selected: Bool
+    let action: () -> Void
+    @State private var hovered = false
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 7) {
+                if let color { Circle().fill(color).frame(width: 7, height: 7) }
+                else { Image(systemName: "square.grid.2x2").font(.system(size: 10)).frame(width: 7) }
+                Text(name).font(.system(size: 12)).fixedSize()
+                Spacer(minLength: 2)
+                if let state { Text(state.label).font(.system(size: 10)).foregroundStyle(state.color) }
+                Image(systemName: "checkmark").font(.system(size: 10)).opacity(selected ? 1 : 0).frame(width: 10)
+            }.padding(.horizontal, 7).frame(height: 26)
+                .background(selected || hovered ? .white.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: 8))
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain).onHover { hovered = $0 }
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+}
+struct AgentFrameworkEmptyState: View {
+    let agent: NotchAgent
+    let connect: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label("未连接", systemImage: "circle.fill").foregroundStyle(.gray)
+            Text("在设置中连接 \(agent.name) 后，启动一次新会话。")
+                .foregroundStyle(.gray).fixedSize(horizontal: false, vertical: true)
+            Button("连接 \(agent.name)", action: connect).buttonStyle(.bordered)
+        }.font(.caption)
+    }
+}
+private extension Color {
+    static let agentRunning = Color(red: 0.36, green: 0.81, blue: 0.42)
+}
+private extension AgentConnectionState {
+    var color: Color {
+        switch self { case .running: return .agentRunning; case .idle: return .init(red: 0.31, green: 0.50, blue: 0.84); case .offline: return .init(white: 0.4) }
+    }
+}
+extension NotchAgent {
+    var accentColor: Color {
+        switch self {
+        case .pi: return Color(red: 0.55, green: 0.49, blue: 0.96)
+        case .codex: return Color(red: 0.31, green: 0.50, blue: 0.84)
+        case .claude: return Color(red: 0.85, green: 0.45, blue: 0.29)
+        case .zcode: return Color(red: 0.18, green: 0.71, blue: 0.59)
+        case .antigravity: return Color(red: 0.82, green: 0.40, blue: 0.61)
+        }
+    }
+}
 private struct AgentSessionDetail: View {
     let id: String
     let snapshot: SessionSnapshot
-    @ObservedObject private var monitor = AgentMonitor.shared
+    @ObservedObject var monitor: AgentMonitor
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack(spacing: 6) {
@@ -78,7 +302,7 @@ private struct AgentSessionDetail: View {
                 Button { monitor.dismiss(id) } label: { Image(systemName: "xmark") }.help("移除会话卡片")
             }.buttonStyle(.plain)
             if let request = monitor.requests.first(where: { $0.sessionID == id }) {
-                AgentRequestView(request: request).id(request.id)
+                AgentRequestView(request: request, monitor: monitor).id(request.id)
             } else {
                 if !snapshot.agentTasks.isEmpty {
                     HStack {
@@ -89,6 +313,14 @@ private struct AgentSessionDetail: View {
                 }
                 ScrollView {
                     VStack(alignment: .leading, spacing: 8) {
+                        ForEach(snapshot.agentTasks.items) { task in
+                            HStack(spacing: 7) {
+                                Image(systemName: task.status == .completed ? "checkmark.circle.fill" : task.status == .inProgress ? "circle.dotted" : "circle")
+                                    .foregroundStyle(task.status == .completed ? .green : task.status == .inProgress ? .cyan : .gray)
+                                Text(task.progressLabel).font(.caption).lineLimit(2)
+                                Spacer(minLength: 0)
+                            }.accessibilityLabel("\(task.progressLabel)，\(task.status == .completed ? "已完成" : task.status == .inProgress ? "进行中" : "待执行")")
+                        }
                         if let prompt = snapshot.lastUserPrompt { Text(prompt).font(.caption).foregroundStyle(.gray).lineLimit(2) }
                         if let tool = snapshot.currentTool {
                             Label(tool, systemImage: "wrench.and.screwdriver").font(.caption.weight(.medium))
@@ -115,7 +347,7 @@ private struct AgentRequestView: View {
     let request: PendingAgentRequest
     @State private var answers: [String: String] = [:]
     @State private var selected: [String: Set<String>] = [:]
-    @ObservedObject private var monitor = AgentMonitor.shared
+    @ObservedObject var monitor: AgentMonitor
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             ScrollView {

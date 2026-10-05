@@ -27,20 +27,38 @@ final class AgentMonitor: ObservableObject {
     @Published private(set) var requests: [PendingAgentRequest] = []
     @Published private(set) var serviceStatus = "Agent 服务尚未启动"
     @Published var selectedSessionID: String?
-    @Published var filter: NotchAgent?
+    @Published var selectedAgent: NotchAgent? {
+        didSet { preferences.set(selectedAgent?.rawValue ?? "all", forKey: "selectedAgentFramework") }
+    }
+    private let preferences: UserDefaults
+
+    init(preferences: UserDefaults = .standard) {
+        self.preferences = preferences
+        selectedAgent = NotchAgent(rawValue: preferences.string(forKey: "selectedAgentFramework") ?? "")
+    }
+    var isServiceReady: Bool { serviceStatus == "Agent 服务已就绪" }
     private var cleanup: Timer?
-    var sortedSessions: [(id: String, snapshot: SessionSnapshot)] {
-        sessions.filter { filter == nil || $0.value.source == filter?.rawValue }
+    var overview: [AgentOverviewEntry] { AgentOverviewEntry.entries(sessions: sessions) }
+    var connectedAgents: [AgentOverviewEntry] { overview.filter { $0.state != .offline } }
+    func sessions(for agent: NotchAgent) -> [(id: String, snapshot: SessionSnapshot)] {
+        sessions.filter { $0.value.source == agent.rawValue }
             .sorted { left, right in
                 let leftWaiting = requests.contains { $0.sessionID == left.key }
                 let rightWaiting = requests.contains { $0.sessionID == right.key }
                 if leftWaiting != rightWaiting { return leftWaiting }
-                return left.value.lastActivity > right.value.lastActivity
+                let leftActive = left.value.status != .idle, rightActive = right.value.status != .idle
+                if leftActive != rightActive { return leftActive }
+                if left.value.lastActivity != right.value.lastActivity { return left.value.lastActivity > right.value.lastActivity }
+                return left.key < right.key
             }.map { (id: $0.key, snapshot: $0.value) }
     }
-
+    var sortedSessions: [(id: String, snapshot: SessionSnapshot)] {
+        guard let selectedAgent else { return [] }
+        return sessions(for: selectedAgent)
+    }
     var selected: (id: String, snapshot: SessionSnapshot)? {
-        if let id = selectedSessionID, let snapshot = sessions[id], filter == nil || snapshot.source == filter?.rawValue { return (id, snapshot) }
+        guard let selectedAgent else { return nil }
+        if let id = selectedSessionID, let snapshot = sessions[id], snapshot.source == selectedAgent.rawValue { return (id, snapshot) }
         return sortedSessions.first
     }
     func start() {
@@ -102,6 +120,7 @@ final class AgentMonitor: ObservableObject {
             let request = PendingAgentRequest(id: id, sessionID: sessionID, tool: event.toolName ?? "工具调用", detail: event.toolDescription ?? "", questions: questions, originalInput: event.toolInput ?? [:], respond: respond)
             requests.append(request); sessions[sessionID]?.status = questions.isEmpty ? .waitingApproval : .waitingQuestion
             selectedSessionID = sessionID
+            selectedAgent = agent
             BoringViewCoordinator.shared.currentView = .agents
             NotificationCenter.default.post(name: .notchAgentNeedsAttention, object: nil)
         } else { respond(Data("{}".utf8)) }

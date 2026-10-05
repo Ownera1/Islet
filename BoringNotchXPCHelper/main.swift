@@ -21,8 +21,12 @@ class ServiceDelegate: NSObject, NSXPCListenerDelegate {
         exportedObject.connection = newConnection
         newConnection.remoteObjectInterface = NSXPCInterface(with: NotchIntegrationCallbacks.self)
         newConnection.exportedObject = exportedObject
+        let mediaKeys = exportedObject.mediaKeys
         newConnection.invalidationHandler = { [weak exportedObject] in
-            Task { @MainActor in exportedObject?.integration.stop() }
+            Task { @MainActor in
+                mediaKeys.stop()
+                exportedObject?.integration.stop()
+            }
         }
         
         // Resuming the connection allows the system to deliver more incoming messages.
