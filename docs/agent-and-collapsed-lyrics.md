@@ -50,3 +50,5 @@ swift test --package-path Packages/NotchIntegrations --scratch-path build/Integr
 此前权限在非沙盒 Helper 查询，但媒体键在沙盒主应用创建 HID event tap，失败时无提示。现在 Helper 创建 session event tap，仅接收音量、静音、屏幕亮度和键盘背光七个媒体键；播放键和普通键不拦截。权限检查探测同一 Helper 的实际拦截能力；按下与释放均消费，仅将按下和重复事件送到主应用执行原来的系统动作。主应用沙盒保持开启。连接失效移除 tap；超时禁用后重新启用。开关快速切换时用请求代次避免延迟回复重新开启 HUD，失败和断线显示明确提示。
 
 145 项核心测试覆盖媒体键解码、显示器断连/开关/重连与 Agent 聚合；HUD 回归脚本验证失败、重试、修饰键、断线和延迟回复。系统 Accessibility 的实际 TCC 授权、物理媒体键与双屏热插拔未由隔离测试代替；新版本若系统保留旧授权条目，需要按 HUD 设置提示重新启用 Islet。
+
+Helper 的 `XPCService.RunLoopType` 显式设置为 `NSRunLoop`，确保主线程上的 CFRunLoop event tap source 被分发。XPC 默认使用 `dispatch_main`，不应依赖它分发 CFRunLoop source；属性定义见 [Apple XPC Services 文档](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingXPCServices.html)。发布校验从真实已编译 Helper 的 Info.plist 检查此值，同时检查主应用和 Helper 均没有调试权限。

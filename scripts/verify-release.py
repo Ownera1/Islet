@@ -45,6 +45,7 @@ helper_entitlements = plistlib.loads(subprocess.check_output(
 assert not helper_entitlements.get('com.apple.security.app-sandbox', False), 'Helper must perform privileged desktop operations outside the app sandbox'
 assert not helper_entitlements.get('com.apple.security.get-task-allow'), 'Do not distribute Helper debugger access'
 assert helper['CFBundleIdentifier'] == 'com.ownera1.agentusagenotch.helper'
+assert helper.get('XPCService', {}).get('RunLoopType') == 'NSRunLoop', 'Helper must run CF sources for HUD media events'
 assert helper.get('XPCService', {}).get('JoinExistingSession') is True, 'Helper must join the login session to read CLI keychain credentials'
 revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
 assert not subprocess.check_output(['git', 'status', '--porcelain'], cwd=root, text=True).strip(), 'Commit the released source before packaging'
