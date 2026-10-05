@@ -7,6 +7,28 @@
         <language>zh-cn</language>
         <item>
             <title>0.1.8</title>
+            <pubDate>Mon, 05 Oct 2026 17:35:18 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>10</sparkle:version>
+            <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.8
+
+此发布已更新为 build 10。最新安装包文件名包含 `build10`；已安装 0.1.8 build 9 的用户也可通过自动更新获取此版本。
+
+下载新版：[DMG 安装包](https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.dmg) · [ZIP 应用包](https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.zip)。
+
+- 新增对话结束后自动展开 Agent 状态页，并选中对应 Agent 和会话。默认开启，可在“Agent 与订阅 → Agent 显示”中关闭；重复完成通知与历史对话回放不会反复展开，待处理审批与问题优先显示。
+- 修复滚动日历、翻回今天或后台刷新后意外进入歌词专注模式的问题。自动专注只在每次展开 Home 时判断一次，手动退出后不会在同一次展开中被重新拉回。
+- 等待今天的日历与提醒事项加载完成再判断，避免把初始空数组当作“今天没有日程”；已加载的缓存也可直接完成判断。
+- 展开时日历回到今天，所选日期与显示的事件共用同一个状态。快速切换日期时，过期或已取消的查询结果不会覆盖当前事件。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.zip" length="17600468" type="application/octet-stream" sparkle:edSignature="AptnG00KUM2kVgPXiaOnxxAPGfIwnBO24p9tb7jijo+JVZjGWbMcKnyTZIXkyQQP1nsfdyUV9TGzjnCeS8tgCA=="/>
+        </item>
+        <item>
+            <title>0.1.8</title>
             <pubDate>Mon, 05 Oct 2026 16:55:52 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
             <sparkle:version>9</sparkle:version>
@@ -81,29 +103,6 @@
 下载 DMG，将 Islet.app 拖入 Applications。应用标识保持不变，已有设置与 Agent 连接继续使用。发行包使用本地代码签名和 Ed25519 更新签名，尚未经过 Apple 公证。
 ]]></description>
             <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.4/Islet-0.1.4-universal.zip" length="17164701" type="application/octet-stream" sparkle:edSignature="oLpz7u4RfXKOfqZzc8TGqrR9TyRY9F61qRJxEv7FHHqQer/fHqqR9frBX7w6gih5MZatr2EUcF0i8FKZ7AMBAA=="/>
-        </item>
-        <item>
-            <title>0.1.3</title>
-            <pubDate>Sun, 04 Oct 2026 14:34:28 +0000</pubDate>
-            <link>https://github.com/Ownera1/Islet/releases</link>
-            <sparkle:version>4</sparkle:version>
-            <sparkle:shortVersionString>0.1.3</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[## 0.1.3
-
-- 应用与仓库更名为 Islet，菜单、引导页、设置、安装包和更新链接保持一致；已有设置与 Agent 连接继续使用。
-- 修复歌词专注模式展开时顶部露出系统栏缝隙的问题，展开背景统一定高、顶部对齐并裁剪。
-- 更新接入 Sparkle：自动检查，应用内下载、签名验证、安装和重新启动；设置中可开启后台下载。
-- Home 音乐播放器调整封面、标题、歌手、进度和控制按钮的比例，显示当前歌词与下一句预告。
-- 增加歌词专注模式，保留日历状态并显示可滚动、可点击跳转的歌词。
-- 增加逐字歌词与增强 LRC 解析、行级扫光降级、长句滚动和歌词时间偏移设置。
-- 改善加载中、纯音乐与缺失歌词状态，歌词异步到达不再推动播放控制的位置。
-
-需要 macOS 15 或更新版本，支持 Apple Silicon 和 Intel。0.1.2 及更早版本需手动安装一次；从本版本开始支持应用内更新。
-
-下载 DMG，将 Islet.app 拖入 Applications。手动迁移时先退出旧应用，移除旧 Agent Usage Notch.app，已有设置会保留。发行包使用本地代码签名和 Ed25519 更新签名，尚未经过 Apple 公证。
-]]></description>
-            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.3/Islet-0.1.3-universal.zip" length="17103075" type="application/octet-stream" sparkle:edSignature="7Kn/s5Jx107f3J2WbQIT+1EhBLhHzr0uaG5nnaGyXfRS6pGT7nR/BnYkXYBhna3/TEQpl8L0uUR9+fZYSl9DDg=="/>
         </item>
     </channel>
 </rss>
