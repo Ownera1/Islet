@@ -10,12 +10,6 @@
 import Foundation
 @preconcurrency import EventKit
 
-protocol CalendarServiceProviding {
-    func requestAccess(to type: EKEntityType) async throws -> Bool
-    func calendars() async -> [CalendarModel]
-    func events(from start: Date, to end: Date, calendars: [String]) async -> [EventModel]
-}
-
 class CalendarService: CalendarServiceProviding {
     private let store = EKEventStore()
     

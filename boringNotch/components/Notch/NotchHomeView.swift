@@ -10,6 +10,7 @@ import Combine
 import Defaults
 import SwiftUI
 import NotchIntegrationCore
+import OSLog
 
 // MARK: - Music Player Components
 
@@ -442,6 +443,7 @@ struct NotchHomeView: View {
 
     private var focused: Bool { enableLyrics && musicManager.lyricsFocusRequested }
     private var modeAnimation: Animation? { reduceMotion ? nil : .easeInOut(duration: 0.4) }
+    private static let focusLogger = Logger(subsystem: "com.ownera1.agentusagenotch", category: "AutomaticLyricsFocus")
 
     private var mainContent: some View {
         GeometryReader { geometry in
@@ -487,20 +489,40 @@ struct NotchHomeView: View {
         }
         .frame(height: 134)
         .animation(modeAnimation, value: focused)
-        .onChange(of: focused) { _, _ in vm.isHoveringCalendar = false }
+        .onChange(of: focused) { _, _ in
+            vm.isHoveringCalendar = false
+            vm.automaticLyricsFocusCheck.cancel()
+        }
         .onChange(of: musicManager.lyricsAvailability) { _, state in
             if state == .unavailable { musicManager.lyricsFocusRequested = false }
-            enterAutomaticFocusIfNeeded()
         }
-        .onChange(of: calendarManager.events) { _, _ in enterAutomaticFocusIfNeeded() }
-        .onChange(of: autoFocus) { _, _ in enterAutomaticFocusIfNeeded() }
-        .onAppear { enterAutomaticFocusIfNeeded() }
+        .onChange(of: calendarManager.loadedDay) { _, _ in
+            enterAutomaticFocusIfNeeded(source: "calendarLoaded")
+        }
+        .onChange(of: calendarManager.selectedDay) { _, day in
+            if !Calendar.current.isDateInToday(day) { vm.automaticLyricsFocusCheck.cancel() }
+        }
+        .onChange(of: autoFocus) { _, enabled in
+            if !enabled { vm.automaticLyricsFocusCheck.cancel() }
+        }
+        .onAppear { enterAutomaticFocusIfNeeded(source: "homeAppeared") }
         .blur(radius: vm.notchState == .closed ? 30 : 0)
     }
 
-    private func enterAutomaticFocusIfNeeded() {
-        if autoFocus && showCalendar && EventListView.filteredEvents(events: calendarManager.events).isEmpty
-            && musicManager.lyricsAvailability.canFocus {
+    private func enterAutomaticFocusIfNeeded(source: String) {
+        guard vm.automaticLyricsFocusCheck.isPending else { return }
+        guard autoFocus, showCalendar, enableLyrics else {
+            vm.automaticLyricsFocusCheck.cancel()
+            return
+        }
+        let isToday = Calendar.current.isDateInToday(calendarManager.selectedDay)
+        let loaded = calendarManager.hasLoadedSelectedDay
+        let hasEvents = !EventListView.filteredEvents(events: calendarManager.events).isEmpty
+        let canFocus = musicManager.lyricsAvailability.canFocus
+        Self.focusLogger.debug("Check source=\(source, privacy: .public) today=\(isToday) loaded=\(loaded) hasEvents=\(hasEvents) canFocus=\(canFocus)")
+        if vm.automaticLyricsFocusCheck.consumeIfReady(isOpen: vm.notchState == .open,
+            isHome: coordinator.currentView == .home, isViewingToday: isToday,
+            hasLoadedSelectedDay: loaded, hasVisibleEvents: hasEvents, canFocus: canFocus) {
             musicManager.lyricsFocusRequested = true
         }
     }

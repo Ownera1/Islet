@@ -18,6 +18,7 @@ class BoringViewModel: NSObject, ObservableObject {
 
     @Published var contentType: ContentType = .normal
     @Published private(set) var notchState: NotchState = .closed
+    var automaticLyricsFocusCheck = AutomaticLyricsFocusCheck()
 
     @Published var dragDetectorTargeting: Bool = false
     @Published var generalDropTargeting: Bool = false
@@ -77,6 +78,7 @@ class BoringViewModel: NSObject, ObservableObject {
         
         coordinator.$currentView.sink { [weak self] view in
             guard let self, self.notchState == .open else { return }
+            if view != .home { self.automaticLyricsFocusCheck.cancel() }
             self.notchSize = openNotchSize(for: view)
         }.store(in: &cancellables)
         setupDetectorObserver()
@@ -210,6 +212,11 @@ class BoringViewModel: NSObject, ObservableObject {
     }
 
     func open() {
+        if notchState != .open {
+            CalendarManager.shared.resetToToday()
+            automaticLyricsFocusCheck.begin(enabled: Defaults[.autoLyricsFocusWhenCalendarEmpty]
+                && Defaults[.showCalendar] && Defaults[.enableLyrics])
+        }
         self.notchSize = openNotchSize(for: coordinator.currentView)
         self.notchState = .open
         
@@ -222,6 +229,7 @@ class BoringViewModel: NSObject, ObservableObject {
         if SharingStateManager.shared.preventNotchClose {
             return
         }
+        automaticLyricsFocusCheck.cancel()
         self.notchSize = getClosedNotchSize(screenUUID: self.screenUUID)
         self.closedNotchSize = self.notchSize
         self.notchState = .closed

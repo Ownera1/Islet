@@ -38,6 +38,8 @@ jobs:
         run: ./scripts/build-app.sh Release 'ARCHS=arm64 x86_64' ONLY_ACTIVE_ARCH=NO
       - name: HUD helper lifecycle regression tests
         run: ./scripts/test-hud-lifecycle.sh Release
+      - name: Calendar automatic focus regression tests
+        run: ./scripts/test-calendar-focus.sh Release
       - name: Package and verify DMG and ZIP
         run: ./scripts/package-release.sh
       - name: Retrieve prior archive and current feed

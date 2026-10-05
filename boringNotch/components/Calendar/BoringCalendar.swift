@@ -70,7 +70,8 @@ struct WheelPicker: View {
             }
         }
         .onAppear {
-            scrollToToday(config: config)
+            byClick = true
+            scrollPosition = indexForDate(selectedDate)
         }
         // When parent updates the bound selectedDate (e.g., view reopen), center the wheel on it
         .onChange(of: selectedDate) { _, newValue in
@@ -138,13 +139,6 @@ struct WheelPicker: View {
         }
     }
 
-    private func scrollToToday(config: Config) {
-        let today = Date()
-        byClick = true
-        scrollPosition = indexForDate(today)
-        selectedDate = today
-    }
-
     // MARK: - Index/Date mapping with steps and spacers
     private func indexForDate(_ date: Date) -> Int {
         let spacerNum = config.offset
@@ -181,7 +175,7 @@ struct WheelPicker: View {
 struct CalendarView: View {
     @EnvironmentObject var vm: BoringViewModel
     @ObservedObject private var calendarManager = CalendarManager.shared
-    @State private var selectedDate = Date()
+    private var selectedDate: Date { calendarManager.selectedDay }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -198,7 +192,8 @@ struct CalendarView: View {
                 }
 
                 ZStack(alignment: .top) {
-                    WheelPicker(selectedDate: $selectedDate, config: Config())
+                    WheelPicker(selectedDate: Binding(get: { selectedDate },
+                        set: { calendarManager.selectDay($0) }), config: Config())
                     HStack(alignment: .top) {
                         LinearGradient(
                             colors: [Color.black, .clear], startPoint: .leading, endPoint: .trailing
@@ -225,22 +220,8 @@ struct CalendarView: View {
         }
         .listRowBackground(Color.clear)
         .frame(height: 120)
-        .onChange(of: selectedDate) {
-            Task {
-                await calendarManager.updateCurrentDate(selectedDate)
-            }
-        }
-        .onChange(of: vm.notchState) { _, _ in
-            Task {
-                await calendarManager.updateCurrentDate(Date.now)
-                selectedDate = Date.now
-            }
-        }
-        .onAppear {
-            Task {
-                await calendarManager.updateCurrentDate(Date.now)
-                selectedDate = Date.now
-            }
+        .task(id: calendarManager.selectedDay) {
+            await calendarManager.loadSelectedDayIfNeeded()
         }
     }
 }
