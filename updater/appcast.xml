@@ -6,6 +6,24 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.5</title>
+            <pubDate>Mon, 05 Oct 2026 05:15:15 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>6</sparkle:version>
+            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.5
+
+- 修复自动切换显示器开关只更改透明度的问题。首选屏幕断开后可回退到可用屏幕，重新连接后自动切回；屏幕布局变化会重新定位。
+- 修复 HUD 权限检查与媒体键拦截位于不同进程的问题，统一由 Helper 处理。开启失败和连接中断会显示具体提示，保留音量、亮度、背光及修饰键操作。
+- Agent 页新增“全部 Agent”总览、按实时会话状态分组的下拉菜单，以及可持久化的单行／双行总览设置。框架名称保持完整显示，继续支持多会话、任务、审批和回答。
+- 收起态歌词可选择关闭、仅外接屏或所有显示器；支持当前句高亮、长句滚动、间奏、暂停和减少动态效果。内置刘海屏使用独立下方歌词条。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP。自动更新包使用原有 Sparkle Ed25519 公钥验签；应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.5/Islet-0.1.5-universal.zip" length="17590347" type="application/octet-stream" sparkle:edSignature="7aLfFl7FhZjpxw2oRoPSm6BFrczaf+2A7r79E499Dj8ykEf6ghvqZ7Bw8Itx/jWSE3DYsCSTPgNb44GpeftzCg=="/>
+        </item>
+        <item>
             <title>0.1.4</title>
             <pubDate>Sun, 04 Oct 2026 16:17:43 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
