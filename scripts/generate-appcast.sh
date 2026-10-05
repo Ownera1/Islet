@@ -12,7 +12,7 @@ if [ "$TASK_TAG" != "v$TASK_VERSION" ]; then
 fi
 TASK_TOOLS="$TASK_ROOT/build/SourcePackages/artifacts/sparkle/Sparkle/bin"
 TASK_ARCHIVES="$TASK_ROOT/build/update-archives"
-TASK_ZIP="Islet-$TASK_VERSION-universal.zip"
+TASK_ZIP="Islet-$TASK_VERSION-build$TASK_BUILD-universal.zip"
 mkdir -p "$TASK_ARCHIVES"
 cp "$TASK_ROOT/dist/$TASK_ZIP" "$TASK_ARCHIVES/$TASK_ZIP"
 cp "$TASK_ROOT/updater/appcast.xml" "$TASK_ARCHIVES/appcast.xml"

@@ -31,6 +31,9 @@ final class AgentMonitor: ObservableObject {
         didSet { preferences.set(selectedAgent?.rawValue ?? "all", forKey: "selectedAgentFramework") }
     }
     private let preferences: UserDefaults
+    private var completedSessions: Set<String> = []
+    private var promptHookSessions: Set<String> = []
+    static let revealOnCompletionKey = "agentRevealOnCompletion"
 
     init(preferences: UserDefaults = .standard) {
         self.preferences = preferences
@@ -86,6 +89,8 @@ final class AgentMonitor: ObservableObject {
         for request in requests.filter({ $0.sessionID == id }) { request.respond(Data("{}".utf8)) }
         requests.removeAll { $0.sessionID == id }; sessions.removeValue(forKey: id)
         if selectedSessionID == id { selectedSessionID = nil }
+        completedSessions.remove(id)
+        promptHookSessions.remove(id)
     }
     func decide(_ request: PendingAgentRequest, allow: Bool, answers: [String: String]? = nil) {
         requests.removeAll { $0.id == request.id }
@@ -98,6 +103,15 @@ final class AgentMonitor: ObservableObject {
             respond(Data("{}".utf8)); return
         }
         let name = EventNormalizer.normalize(event.eventName)
+        if event.agentId == nil {
+            if name == "SessionStart" { promptHookSessions.remove(sessionID) }
+            if name == "UserPromptSubmit" { promptHookSessions.insert(sessionID) }
+            if name == "SessionStart" || name == "UserPromptSubmit" {
+                completedSessions.remove(sessionID)
+            }
+            // Antigravity has no turn-start hook. Each Stop is its only turn boundary.
+            if agent == .antigravity && name == "Stop" { completedSessions.remove(sessionID) }
+        }
         if ["SessionStart", "SessionEnd", "Stop", "Interrupt", "TaskRoundComplete"].contains(name) {
             for request in requests.filter({ $0.sessionID == sessionID }) { request.respond(Data("{}".utf8)) }
             requests.removeAll { $0.sessionID == sessionID }
@@ -105,6 +119,9 @@ final class AgentMonitor: ObservableObject {
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 30)
         for effect in effects {
             if case .removeSession(let sid) = effect { dismiss(sid) }
+            if case .enqueueCompletion(let sid) = effect, event.agentId == nil {
+                revealCompletedSession(sid)
+            }
         }
         if agent.canApprove && name == "PermissionRequest" {
             let rawQuestions = event.toolInput?["questions"] as? [[String: Any]] ?? []
@@ -128,16 +145,42 @@ final class AgentMonitor: ObservableObject {
     private func apply(_ data: Data) {
         guard let payload = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = payload["sessionID"] as? String, var snapshot = sessions[id] else { return }
+        let wasActive = snapshot.status == .processing || snapshot.status == .running
+        let isReplay = payload["isReplay"] as? Bool == true
+        var didFinish = false
         if let reply = payload["reply"] as? String { snapshot.lastAssistantMessage = reply }
         if let prompt = payload["prompt"] as? String { snapshot.lastUserPrompt = prompt }
         if !requests.contains(where: { $0.sessionID == id }), !snapshot.interrupted {
-            if let status = payload["turnStatus"] as? String { snapshot.status = status == "idle" ? .idle : .processing }
+            if let status = payload["turnStatus"] as? String {
+                // When prompt hooks exist, only they start a new turn. A delayed
+                // transcript start from the finished turn must not re-arm the popup.
+                if status == "processing", !isReplay, !wasActive, !promptHookSessions.contains(id) {
+                    completedSessions.remove(id)
+                }
+                let hasActiveSubagents = snapshot.subagents.values.contains { $0.status != .idle }
+                snapshot.status = status == "idle" ? (hasActiveSubagents ? .running : .idle) : .processing
+                didFinish = status == "idle" && wasActive && !isReplay && payload["hasActivity"] as? Bool == true
+            }
             if payload["hasActivity"] as? Bool == true { snapshot.lastActivity = Date() }
         }
         if let branch = payload["branch"] as? String { snapshot.gitBranch = branch; snapshot.gitIsWorktree = payload["isWorktree"] as? Bool ?? false }
         if let tasks = payload["tasks"], let taskData = try? JSONSerialization.data(withJSONObject: tasks),
            let list = try? JSONDecoder().decode(AgentTaskList.self, from: taskData) { snapshot.agentTasks = list }
         sessions[id] = snapshot
+        if didFinish { revealCompletedSession(id) }
+    }
+    private func revealCompletedSession(_ id: String) {
+        guard let snapshot = sessions[id], snapshot.status == .idle, !snapshot.interrupted,
+              !snapshot.subagents.values.contains(where: { $0.status != .idle }),
+              completedSessions.insert(id).inserted else { return }
+        guard preferences.object(forKey: Self.revealOnCompletionKey) as? Bool ?? true else { return }
+        // Keep an outstanding approval/question selected when another conversation finishes.
+        if requests.isEmpty, let agent = NotchAgent(rawValue: snapshot.source) {
+            selectedSessionID = id
+            selectedAgent = agent
+        }
+        BoringViewCoordinator.shared.currentView = .agents
+        NotificationCenter.default.post(name: .notchAgentNeedsAttention, object: nil)
     }
     private func removeEndedSessions() {
         let cutoff = Date().addingTimeInterval(-24 * 3600)

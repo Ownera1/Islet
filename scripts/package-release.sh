@@ -4,11 +4,12 @@ TASK_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$TASK_ROOT"
 TASK_APP="$TASK_ROOT/build/DerivedData/Build/Products/Release/Islet.app"
 TASK_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$TASK_APP/Contents/Info.plist")
-TASK_STAGE="$TASK_ROOT/build/dmg-stage-$TASK_VERSION"
-TASK_DMG="$TASK_ROOT/dist/Islet-$TASK_VERSION-universal.dmg"
-TASK_ZIP="$TASK_ROOT/dist/Islet-$TASK_VERSION-universal.zip"
+TASK_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$TASK_APP/Contents/Info.plist")
+TASK_STAGE="$TASK_ROOT/build/dmg-stage-$TASK_VERSION-build$TASK_BUILD"
+TASK_DMG="$TASK_ROOT/dist/Islet-$TASK_VERSION-build$TASK_BUILD-universal.dmg"
+TASK_ZIP="$TASK_ROOT/dist/Islet-$TASK_VERSION-build$TASK_BUILD-universal.zip"
 if [ -e "$TASK_STAGE" ] || [ -e "$TASK_DMG" ] || [ -e "$TASK_ZIP" ]; then
-  echo "This version is already staged or packaged. Use a new version or inspect the existing files."
+  echo "This build is already staged or packaged. Use a new build number or inspect the existing files."
   exit 1
 fi
 mkdir -p "$TASK_STAGE" "$TASK_ROOT/dist"

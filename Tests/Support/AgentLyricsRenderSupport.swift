@@ -21,8 +21,8 @@ final class IntegrationServiceClient {
 @MainActor
 final class BoringViewCoordinator {
     static let shared = BoringViewCoordinator()
-    enum Page { case agents }
-    var currentView: Page = .agents
+    enum Page { case home, agents }
+    var currentView: Page = .home
 }
 
 @MainActor

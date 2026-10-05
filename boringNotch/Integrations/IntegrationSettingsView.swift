@@ -5,6 +5,7 @@ import NotchIntegrationCore
 struct IntegrationSettingsView: View {
     @ObservedObject private var installer = AgentInstaller.shared
     @Default(.agentOverviewStyle) private var overviewStyle
+    @AppStorage("agentRevealOnCompletion") private var revealOnCompletion = true
     @ObservedObject private var monitor = AgentMonitor.shared
     @AppStorage("subscriptionSyncEnabled") private var syncEnabled = true
     @AppStorage("integrationClaudeHome") private var claudeHome = HomePaths.userHome + "/.claude"
@@ -12,6 +13,8 @@ struct IntegrationSettingsView: View {
     var body: some View {
         Form {
             Section("Agent 显示") {
+                Toggle("对话结束后展开 Agent 状态页", isOn: $revealOnCompletion)
+                Text("对话完成时自动展开刘海，并选中对应会话。等待审批或回答时优先显示待处理请求。").font(.caption).foregroundStyle(.secondary)
                 Picker("Agent 总览样式", selection: $overviewStyle) {
                     Text("单行").tag(AgentOverviewStyle.singleLine)
                     Text("双行").tag(AgentOverviewStyle.twoLine)

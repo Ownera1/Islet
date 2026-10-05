@@ -28,12 +28,14 @@ for TASK_RELATIVE in \
   build/AgentLyricsModuleCache \
   build/HUDModuleCache \
   build/CalendarFocusModuleCache \
+  build/AgentCompletionModuleCache \
   build/AgentLyricsRenderingTests \
   build/HUDLifecycleTests \
   build/NotchSurfaceTests \
   build/OldNotchSurfaceTests \
   build/ScrollPanTests \
   build/CalendarFocusTests \
+  build/AgentCompletionTests \
   .build \
   Packages/NotchIntegrations/.build
 do

@@ -15,7 +15,7 @@ final class IntegrationHost {
     let server = AgentHookServer()
     weak var connection: NSXPCConnection?
     private var replies: [UUID: (Data) -> Void] = [:]
-    private var paths: [String: (path: String, token: UUID)] = [:]
+    private var paths: [String: (path: String, token: UUID, hasInitialHistory: Bool)] = [:]
     private var tasks: [String: AgentTaskList] = [:]
     private lazy var tailer = JSONLTailer { [weak self] delta in Task { @MainActor in self?.transcript(delta) } }
     private var client: NotchIntegrationCallbacks? { connection?.remoteObjectProxy as? NotchIntegrationCallbacks }
@@ -38,7 +38,9 @@ final class IntegrationHost {
             else { _ = list.apply(events, now: Date()) }
             self.tasks[sessionID] = list
             if let path = event.rawJSON["transcript_path"] as? String, path.hasPrefix("/"), self.paths[sessionID]?.path != path {
-                self.paths[sessionID] = (path, self.tailer.attach(sessionId: sessionID, filePath: path, initialOffset: 0))
+                let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+                let hasHistory = ((attributes?[.size] as? NSNumber)?.uint64Value ?? 0) > 0
+                self.paths[sessionID] = (path, self.tailer.attach(sessionId: sessionID, filePath: path, initialOffset: 0), hasHistory)
             }
             if name == "SessionEnd" { self.tailer.detach(sessionId: sessionID); self.paths.removeValue(forKey: sessionID); self.tasks.removeValue(forKey: sessionID) }
             if let cwd = event.rawJSON["cwd"] as? String, name == "SessionStart" || name == "Stop" {
@@ -61,12 +63,15 @@ final class IntegrationHost {
     private func publish(_ data: Data) { client?.agentTranscript(data) }
     private func transcript(_ delta: ConversationTailDelta) {
         guard let attachment = paths[delta.sessionId], attachment.path == delta.filePath, attachment.token == delta.attachmentToken else { return }
+        let isReplay = delta.replaysWholeFile || attachment.hasInitialHistory
+        paths[delta.sessionId]?.hasInitialHistory = false
         var list = tasks[delta.sessionId] ?? AgentTaskList(); _ = list.apply(delta.taskEvents, now: Date()); tasks[delta.sessionId] = list
         var payload: [String: Any] = ["sessionID": delta.sessionId]
         if let text = delta.lastAssistantMessage { payload["reply"] = text }
         if let text = delta.lastUserPrompt { payload["prompt"] = text }
         if let status = delta.turnStatus { payload["turnStatus"] = status == .idle ? "idle" : "processing" }
-        payload["hasActivity"] = delta.hasActivity && !delta.replaysWholeFile
+        payload["isReplay"] = isReplay
+        payload["hasActivity"] = delta.hasActivity && !isReplay
         if let taskData = try? JSONEncoder().encode(list), let rows = try? JSONSerialization.jsonObject(with: taskData) { payload["tasks"] = rows }
         if let data = try? JSONSerialization.data(withJSONObject: payload) { client?.agentTranscript(data) }
     }

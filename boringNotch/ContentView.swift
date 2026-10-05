@@ -416,8 +416,9 @@ struct ContentView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .notchAgentNeedsAttention)) { _ in
-            vm.open()
+            hoverTask?.cancel()
             coordinator.currentView = .agents
+            vm.open()
         }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
     }
