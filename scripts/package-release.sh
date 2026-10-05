@@ -13,6 +13,18 @@ if [ -e "$TASK_STAGE" ] || [ -e "$TASK_DMG" ] || [ -e "$TASK_ZIP" ]; then
 fi
 mkdir -p "$TASK_STAGE" "$TASK_ROOT/dist"
 # A distributed local build must not expose Xcode's debugger entitlement.
+TASK_HELPER="$TASK_APP/Contents/XPCServices/BoringNotchXPCHelper.xpc"
+TASK_HELPER_ENTITLEMENTS="$TASK_ROOT/build/local-helper-release-entitlements.plist"
+/usr/bin/codesign -d --entitlements :- "$TASK_HELPER" > "$TASK_HELPER_ENTITLEMENTS" 2>/dev/null
+python3 - "$TASK_HELPER_ENTITLEMENTS" <<'PY'
+import pathlib, plistlib, sys
+path = pathlib.Path(sys.argv[1])
+entitlements = plistlib.loads(path.read_bytes())
+assert not entitlements.get('com.apple.security.app-sandbox', False)
+entitlements.pop('com.apple.security.get-task-allow', None)
+path.write_bytes(plistlib.dumps(entitlements))
+PY
+/usr/bin/codesign --force --sign - --entitlements "$TASK_HELPER_ENTITLEMENTS" "$TASK_HELPER"
 TASK_ENTITLEMENTS="$TASK_ROOT/build/local-release-entitlements.plist"
 /usr/bin/codesign -d --entitlements :- "$TASK_APP" > "$TASK_ENTITLEMENTS" 2>/dev/null
 python3 - "$TASK_ENTITLEMENTS" <<'PY'

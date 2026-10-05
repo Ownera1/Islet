@@ -39,6 +39,11 @@ assert info.get('SUVerifyUpdateBeforeExtraction') is True
 assert info.get('SUEnableInstallerLauncherService') is True
 assert (app / 'Contents/Frameworks/Sparkle.framework').exists()
 helper = plistlib.loads((app / 'Contents/XPCServices/BoringNotchXPCHelper.xpc/Contents/Info.plist').read_bytes())
+helper_entitlements = plistlib.loads(subprocess.check_output(
+    ['codesign', '-d', '--entitlements', ':-', str(app / 'Contents/XPCServices/BoringNotchXPCHelper.xpc')],
+    stderr=subprocess.DEVNULL))
+assert not helper_entitlements.get('com.apple.security.app-sandbox', False), 'Helper must perform privileged desktop operations outside the app sandbox'
+assert not helper_entitlements.get('com.apple.security.get-task-allow'), 'Do not distribute Helper debugger access'
 assert helper['CFBundleIdentifier'] == 'com.ownera1.agentusagenotch.helper'
 assert helper.get('XPCService', {}).get('JoinExistingSession') is True, 'Helper must join the login session to read CLI keychain credentials'
 revision = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()

@@ -29,7 +29,7 @@ build/SourcePackages/artifacts/sparkle/Sparkle/bin/generate_keys --account com.o
 2. 添加 `updater/release-notes/v<version>.md`，提交到 `main`。
 3. 为该提交推送匹配的标签，例如 `v0.1.3`。
 
-`.github/workflows/release.yml` 校验标签、secret 和源码来源，执行测试、Universal Release 编译、DMG／ZIP 打包、Ed25519 签名和独立的公钥验签。存在上一个 ZIP 时，Sparkle 自动尝试生成 delta；没有可用 delta 时客户端使用完整 ZIP。
+`.github/workflows/release.yml` 校验标签、secret 和源码来源，执行测试、Universal Release 编译、DMG／ZIP 打包、Ed25519 签名和独立的公钥验签。Release 关闭 Xcode 开发权限注入；打包时移除并校验主应用与 Helper 的 `get-task-allow`，避免分发调试权限。存在上一个 ZIP 时，Sparkle 自动尝试生成 delta；没有可用 delta 时客户端使用完整 ZIP。
 
 发布先创建草稿并上传所有产物，再公开 Release，最后将签名 appcast 提交到 `main`。避免 feed 指向尚不可下载的文件。工作流串行执行且只正常推送，不强制覆盖分支。Release 失败时应检查 Actions 日志；若 Release 已公开但 feed 推送失败，可将该 Release 的 `appcast.xml` 验证后提交至 `main`，不要重新签名或修改已上传的 ZIP。
 
