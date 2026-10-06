@@ -100,6 +100,8 @@ struct AgentPanelView: View {
             Text(AgentOverviewEntry.entries(sessions: ["selected": snapshot]).first(where: { $0.agent == agent })?.subtitle ?? entry.subtitle).font(.caption).foregroundStyle(.gray).lineLimit(2)
             if let selected = monitor.selected, let cwd = selected.snapshot.cwd {
                 Text((cwd as NSString).lastPathComponent).font(.caption).foregroundStyle(.gray).lineLimit(1).help(cwd)
+            } else if let title = monitor.selected?.snapshot.sessionTitle {
+                Text(title).font(.caption).foregroundStyle(.gray).lineLimit(1).help(title)
             }
             if entry.state == .running {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
@@ -115,7 +117,7 @@ struct AgentPanelView: View {
                             Button { monitor.selectedSessionID = row.id } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: statusIcon(row.snapshot.status)).foregroundStyle(statusColor(row.snapshot.status))
-                                    Text(row.snapshot.cwd.map { ($0 as NSString).lastPathComponent } ?? "会话").lineLimit(1)
+                                    Text(row.snapshot.cwd.map { ($0 as NSString).lastPathComponent } ?? row.snapshot.sessionTitle ?? "会话").lineLimit(1)
                                     Spacer(minLength: 0)
                                 }.font(.caption).padding(7)
                                 .background(monitor.selected?.id == row.id ? .white.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 7))
@@ -297,12 +299,24 @@ private struct AgentSessionDetail: View {
             HStack(spacing: 6) {
                 Label(statusLabel(snapshot.status), systemImage: statusIcon(snapshot.status)).foregroundStyle(statusColor(snapshot.status)).font(.caption.weight(.semibold))
                 if let branch = snapshot.gitBranch { Text(branch).font(.caption2).foregroundStyle(.gray).lineLimit(1).help(snapshot.cwd ?? "") }
+                if let host = ClaudeDesktop.hostLabel(id: id, snapshot: snapshot) {
+                    Text(host).font(.caption2).foregroundStyle(.gray).lineLimit(1)
+                }
                 Spacer()
                 Button { AgentTerminal.open(snapshot, id: id) } label: { Image(systemName: "arrow.up.forward.app") }.help("打开来源窗口")
                 Button { monitor.dismiss(id) } label: { Image(systemName: "xmark") }.help("移除会话卡片")
             }.buttonStyle(.plain)
             if let request = monitor.requests.first(where: { $0.sessionID == id }) {
                 AgentRequestView(request: request, monitor: monitor).id(request.id)
+            } else if DisplayOnlyWait.kind(status: snapshot.status, islandHoldsRequest: false) != nil {
+                // Blocked on a prompt the island cannot answer (Claude Desktop's own card).
+                VStack(alignment: .leading, spacing: 7) {
+                    if let tool = snapshot.currentTool { Text(tool).font(.caption.weight(.semibold)) }
+                    if let detail = snapshot.toolDescription { Text(detail).font(.caption.monospaced()).foregroundStyle(.gray).lineLimit(4).textSelection(.enabled) }
+                    let place = ClaudeDesktop.isDesktopSession(snapshot) ? ClaudeDesktop.displayName : snapshot.terminalName ?? "来源应用"
+                    Text(snapshot.status == .waitingQuestion ? "请在\(place)中回答" : "请在\(place)中审批").font(.caption).foregroundStyle(.orange)
+                    Button("前往处理") { AgentTerminal.open(snapshot, id: id) }.font(.caption)
+                }
             } else {
                 if !snapshot.agentTasks.isEmpty {
                     HStack {

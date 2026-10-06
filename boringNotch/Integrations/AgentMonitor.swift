@@ -76,6 +76,7 @@ final class AgentMonitor: ObservableObject {
             self.requests.removeAll { $0.id == id }
         }
         client.onTranscript = { [weak self] in self?.apply($0) }
+        client.onCowork = { [weak self] in self?.applyCowork($0) }
         client.start()
         cleanup = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.removeEndedSessions() }
@@ -168,6 +169,31 @@ final class AgentMonitor: ObservableObject {
            let list = try? JSONDecoder().decode(AgentTaskList.self, from: taskData) { snapshot.agentTasks = list }
         sessions[id] = snapshot
         if didFinish { revealCompletedSession(id) }
+    }
+    /// Claude Desktop Cowork task, read by the helper from Claude Desktop's
+    /// own session store. Its permission cards can only be answered there, so
+    /// a wait is shown without a request (display-only).
+    private func applyCowork(_ data: Data) {
+        guard let update = try? JSONDecoder().decode(CoworkSessionUpdate.self, from: data) else { return }
+        let id = update.sessionId
+        let wasWaiting = sessions[id].map { $0.status == .waitingApproval || $0.status == .waitingQuestion } ?? false
+        switch ClaudeDesktop.apply(update, to: &sessions) {
+        case .removed, .shadowed:
+            completedSessions.remove(id)
+            if selectedSessionID == id { selectedSessionID = nil }
+        case .updated(let turnEnded):
+            if update.phase != .idle || turnEnded { completedSessions.remove(id) }
+            if turnEnded { revealCompletedSession(id) }
+            let isWaiting = update.phase == .waitingApproval || update.phase == .waitingQuestion
+            if isWaiting, !wasWaiting, requests.isEmpty {
+                selectedSessionID = id
+                selectedAgent = .claude
+                BoringViewCoordinator.shared.currentView = .agents
+                NotificationCenter.default.post(name: .notchAgentNeedsAttention, object: nil)
+            }
+        case .ignored:
+            break
+        }
     }
     private func revealCompletedSession(_ id: String) {
         guard let snapshot = sessions[id], snapshot.status == .idle, !snapshot.interrupted,

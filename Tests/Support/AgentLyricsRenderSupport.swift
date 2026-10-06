@@ -13,6 +13,7 @@ final class IntegrationServiceClient {
     var onEvent: ((Data, UUID) -> Void)?
     var onDisconnect: ((UUID) -> Void)?
     var onTranscript: ((Data) -> Void)?
+    var onCowork: ((Data) -> Void)?
     func start() { onStatus?("Agent 服务已就绪") }
     func stop() {}
     func respond(_ data: Data, id: UUID) {}

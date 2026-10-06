@@ -6,6 +6,7 @@ import NotchIntegrationCore
     func agentDisconnected(_ requestID: String)
     func agentTranscript(_ data: Data)
     func agentServiceStatus(_ message: String)
+    func agentCoworkUpdate(_ data: Data)
 }
 
 @MainActor
@@ -16,6 +17,7 @@ final class IntegrationServiceClient: NSObject, NotchIntegrationCallbacks {
     var onDisconnect: ((UUID) -> Void)?
     var onTranscript: ((Data) -> Void)?
     var onStatus: ((String) -> Void)?
+    var onCowork: ((Data) -> Void)?
     func start() {
         guard connection == nil else { return }
         let connection = NSXPCConnection(serviceName: "com.ownera1.agentusagenotch.helper")
@@ -52,6 +54,7 @@ final class IntegrationServiceClient: NSObject, NotchIntegrationCallbacks {
     nonisolated func agentDisconnected(_ requestID: String) { Task { @MainActor in if let id = UUID(uuidString: requestID) { self.onDisconnect?(id) } } }
     nonisolated func agentTranscript(_ data: Data) { Task { @MainActor in self.onTranscript?(data) } }
     nonisolated func agentServiceStatus(_ message: String) { Task { @MainActor in self.onStatus?(message) } }
+    nonisolated func agentCoworkUpdate(_ data: Data) { Task { @MainActor in self.onCowork?(data) } }
 }
 
 @MainActor

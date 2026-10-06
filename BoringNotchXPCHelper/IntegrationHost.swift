@@ -7,6 +7,7 @@ import NotchIntegrationCore
     func agentDisconnected(_ requestID: String)
     func agentTranscript(_ data: Data)
     func agentServiceStatus(_ message: String)
+    func agentCoworkUpdate(_ data: Data)
 }
 
 /// Fixed integration operations in boring.notch's existing helper; the UI retains App Sandbox.
@@ -18,6 +19,7 @@ final class IntegrationHost {
     private var paths: [String: (path: String, token: UUID, hasInitialHistory: Bool)] = [:]
     private var tasks: [String: AgentTaskList] = [:]
     private lazy var tailer = JSONLTailer { [weak self] delta in Task { @MainActor in self?.transcript(delta) } }
+    private lazy var cowork = CoworkWatcher { [weak self] data in Task { @MainActor in self?.client?.agentCoworkUpdate(data) } }
     private var client: NotchIntegrationCallbacks? { connection?.remoteObjectProxy as? NotchIntegrationCallbacks }
     func start(connection: NSXPCConnection) {
         self.connection = connection
@@ -54,10 +56,12 @@ final class IntegrationHost {
             }
         }
         do { try server.start() } catch { client?.agentServiceStatus(error.localizedDescription) }
+        cowork.start()
     }
     func stop() {
         for response in replies.values { response(Data("{}".utf8)) }
         replies.removeAll(); tailer.detachAll(); paths.removeAll(); tasks.removeAll(); server.stop()
+        cowork.stop()
     }
     func reply(_ id: UUID, data: Data) { replies.removeValue(forKey: id)?(data) }
     private func publish(_ data: Data) { client?.agentTranscript(data) }

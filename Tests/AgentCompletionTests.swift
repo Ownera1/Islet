@@ -106,6 +106,33 @@ import NotchIntegrationCore
             try transcript(["sessionID": "transcript", "turnStatus": "idle", "hasActivity": true])
             precondition(notifications == endedNotices + expected, "Transcript-only turns must also re-arm")
         }
-        print("Passed Agent completion selection, five providers, successive turns, deduplication, transcript replay, interruption, setting and approval priority checks.")
+        func cowork(_ update: CoworkSessionUpdate) throws {
+            IntegrationServiceClient.shared.onCowork?(try JSONEncoder().encode(update))
+        }
+        let coworkBefore = notifications
+        try cowork(CoworkSessionUpdate(sessionId: "local_cowork", title: "Tidy", phase: .processing, cliSessionId: "cowork-cli"))
+        precondition(monitor.sessions["local_cowork"]?.status == .processing && notifications == coworkBefore,
+            "A running Cowork task shows without expanding")
+        try cowork(CoworkSessionUpdate(sessionId: "local_cowork", phase: .waitingApproval, currentTool: "Bash", cliSessionId: "cowork-cli"))
+        precondition(monitor.sessions["local_cowork"]?.status == .waitingApproval && monitor.requests.isEmpty
+            && notifications == coworkBefore + 1 && monitor.selectedSessionID == "local_cowork",
+            "A Cowork approval is shown display-only, without a queued request")
+        try cowork(CoworkSessionUpdate(sessionId: "local_cowork", phase: .idle, lastResultText: "Done.", cliSessionId: "cowork-cli",
+                                       completedTurnCount: 1, turnEnded: true))
+        precondition(notifications == coworkBefore + 2 && monitor.sessions["local_cowork"]?.status == .idle,
+            "A finished Cowork turn expands")
+        try cowork(CoworkSessionUpdate(sessionId: "local_cowork", phase: .idle, lastResultText: "Done.", cliSessionId: "cowork-cli",
+                                       completedTurnCount: 1))
+        precondition(notifications == coworkBefore + 2, "An unchanged Cowork turn must not expand again")
+        try event(.claude, "SessionStart", id: "cowork-cli")
+        try cowork(CoworkSessionUpdate(sessionId: "local_cowork", phase: .processing, cliSessionId: "cowork-cli"))
+        precondition(monitor.sessions["local_cowork"] == nil && monitor.sessions["cowork-cli"] != nil,
+            "A hook card for the same conversation replaces the Cowork card")
+        try event(.claude, "SessionEnd", id: "cowork-cli")
+        try cowork(CoworkSessionUpdate(sessionId: "local_gone", phase: .processing))
+        try cowork(.removal(sessionId: "local_gone"))
+        precondition(monitor.sessions["local_gone"] == nil, "An archived Cowork task loses its card")
+
+        print("Passed Agent completion selection, five providers, successive turns, deduplication, transcript replay, interruption, setting, approval priority and Cowork checks.")
     }
 }
