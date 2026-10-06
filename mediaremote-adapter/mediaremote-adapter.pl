@@ -259,6 +259,20 @@ my $symbol = DynaLoader::dl_find_symbol($handle, "$symbol_name")
   or fail "Symbol '$symbol_name' not found in $framework";
 DynaLoader::dl_install_xsub("main::$function_name", $symbol);
 
+# Islet: the stream never returns, so when the host hands us a pipe on stdin, a
+# watcher process ends the stream once that pipe closes. The kernel closes it
+# however the host exits, including a crash or SIGKILL.
+if ($function_name eq "stream" && $ENV{MEDIAREMOTE_ADAPTER_EXIT_ON_STDIN_EOF}) {
+  my $streamer = $$;
+  my $watcher = fork();
+  if (defined $watcher && $watcher == 0) {
+    my $buffer;
+    1 while sysread(STDIN, $buffer, 512);
+    kill 'TERM', $streamer;
+    exit 0;
+  }
+}
+
 eval {
   no strict "refs";
   &{"main::$function_name"}();

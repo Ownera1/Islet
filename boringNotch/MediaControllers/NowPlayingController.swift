@@ -66,6 +66,7 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
     private let MRMediaRemoteSetRepeatModeFunction: @convention(c) (Int) -> Void
 
     private var process: Process?
+    private var lifeline: Pipe?
     private var pipeHandler: JSONLinesPipeHandler?
     private var streamTask: Task<Void, Never>?
 
@@ -114,7 +115,9 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
             }
         }
 
+        try? lifeline?.fileHandleForWriting.close()
         self.process = nil
+        self.lifeline = nil
         self.pipeHandler = nil
     }
 
@@ -199,11 +202,18 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         
         process.executableURL = URL(fileURLWithPath: "/usr/bin/perl")
         process.arguments = [scriptURL.path, frameworkPath, "stream"]
+        // The adapter exits when this pipe closes, so it cannot outlive Islet even
+        // when Islet is killed and deinit never runs (see mediaremote-adapter.pl).
+        process.environment = ProcessInfo.processInfo.environment
+            .merging(["MEDIAREMOTE_ADAPTER_EXIT_ON_STDIN_EOF": "1"]) { $1 }
+        let lifeline = Pipe()
+        process.standardInput = lifeline
         
         let pipeHandler = JSONLinesPipeHandler()
         process.standardOutput = await pipeHandler.getPipe()
         
         self.process = process
+        self.lifeline = lifeline
         self.pipeHandler = pipeHandler
 
         do {
