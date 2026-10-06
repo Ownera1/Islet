@@ -17,7 +17,7 @@ Agent 页面提供多会话列表、工具筛选、运行/思考/完成状态、
 
 | 卡片 | 读取来源 | 显示范围 |
 | --- | --- | --- |
-| Claude | Claude Code 已有 OAuth 登录：自定义目录文件，或 Keychain / 默认凭据文件 | Claude 返回的会话、每周和模型额度 |
+| Claude | Claude Code 已有 OAuth 登录：所配置目录自己的钥匙串条目或凭据文件，没有时用默认 `~/.claude` 的登录 | Claude 返回的会话、每周和模型额度 |
 | OpenAI | Codex 已有登录，优先 wham 用量接口，失败时调用 Codex app-server `account/rateLimits/read` | Codex 订阅窗口及模型额度 |
 | Google AI | 优先自动查找 `~/.local/bin/agy`、CLI 安装目录、绝对 PATH 目录及常用安装目录，并静默读取 `/usage`；失败后只查询已运行的同一用户 Antigravity 应用本地服务 | Antigravity / agy 的共享模型额度及实际返回的窗口，标明当前使用的来源 |
 
@@ -28,6 +28,15 @@ Gemini CLI 的旧数据解析保留兼容，但不进入当前额度页面或后
 登录凭据只在辅助进程及 CLI 内读取和使用，不复制进本应用、不写入本应用设置、不打印凭据。Antigravity 本地 HTTPS 只允许连接同一用户进程拥有的 `127.0.0.1` 端口，使用其 CSRF token，拒绝重定向；网络订阅请求保持正常 TLS 校验。
 
 主应用保留 App Sandbox。文件和 CLI 操作在 boring.notch 原有的 XPC Helper 内执行。Helper 设置 `XPCService.JoinExistingSession = true`，加入调用者的登录安全会话，让其启动的 agy 能读取已有钥匙串凭据；不修改钥匙串权限，也不复制 token。钥匙串访问失败单独提示，不误报为未登录。禁止网页跳转的 CLI 子进程沙箱继续生效。Agent 通过权限为 0600 的 `/tmp/boringnotch-用户ID/agent.sock` 通信；桥接程序安装到 `~/.boringnotch/notch-agent-bridge`，Pi 扩展安装到 `~/.pi/agent/extensions/boringnotch.ts`。
+
+## Claude 桌面版
+
+详细说明和实测步骤见 [docs/claude-desktop-support.md](docs/claude-desktop-support.md)。
+
+- **Code 标签页**：通过与命令行版相同的 Hook 显示，卡片标注「Claude 桌面版」，点击回到桌面版。审批由桌面版自己的卡片处理：刘海只显示等待状态并提示到桌面版处理，不提供批准或拒绝按钮。
+- **Cowork**：Cowork 在虚拟机里运行，不触发 Hook。Helper 每 2 秒只读扫描 `~/Library/Application Support/Claude/local-agent-mode-sessions`，显示运行中、等待审批 / 回答（仅展示）和完成；点击打开桌面版中的该任务。归档、隐藏（Dispatch、radar 等）和 10 分钟内没有活动的旧会话不显示。同一会话已有 Hook 卡片时以 Hook 卡片为准。
+- **额度**：只来自命令行版 Claude Code 的登录。Islet 不解密桌面版的登录凭据，不读取 "Claude Safe Storage"，不刷新 token，也不为取额度调用模型。只用桌面版时卡片会提示在终端运行一次 `claude` 登录。
+- **调试**：bridge 只在设置 `BORINGNOTCH_DEBUG=1` 时写 `/tmp/notch-agent-bridge.log`（权限 0600），不记录 Hook 内容。
 
 ## 构建与测试
 
