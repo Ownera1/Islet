@@ -98,19 +98,19 @@ func buildAncestry(startingAt pid: pid_t, maxDepth: Int = 6) -> [(pid: pid_t, ex
     return result
 }
 
-func debugLog(_ message: String) {
+// Off by default: BORINGNOTCH_DEBUG=1 turns it on (see BridgeDebugLog).
+let debugLogging = BridgeDebugLog.isEnabled(environment: ProcessInfo.processInfo.environment)
+
+func debugLog(_ message: @autoclosure () -> String) {
+    guard debugLogging else { return }
     let ts = ISO8601DateFormatter().string(from: Date())
-    let line = "[\(ts)] \(message)\n"
-    // BORINGNOTCH_BRIDGE_LOG moves the log: the tests that run this binary point
-    // it at a temp file, so their payloads stay out of the log real hooks append to.
-    let path = ProcessInfo.processInfo.environment["BORINGNOTCH_BRIDGE_LOG"] ?? "/tmp/notch-agent-bridge.log"
-    if let handle = FileHandle(forWritingAtPath: path) {
-        handle.seekToEndOfFile()
-        handle.write(Data(line.utf8))
-        handle.closeFile()
-    } else {
-        FileManager.default.createFile(atPath: path, contents: Data(line.utf8))
-    }
+    let line = Data("[\(ts)] \(message())\n".utf8)
+    let path = BridgeDebugLog.path(environment: ProcessInfo.processInfo.environment)
+    // Owner-only, append, and never through a symlink planted in /tmp.
+    let fd = open(path, O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW, 0o600)
+    guard fd >= 0 else { return }
+    line.withUnsafeBytes { buf in _ = write(fd, buf.baseAddress, buf.count) }
+    close(fd)
 }
 
 func nonEmptyString(_ value: Any?) -> String? {
@@ -257,9 +257,7 @@ guard stat(socketPath, &statBuf) == 0, (statBuf.st_mode & S_IFMT) == S_IFSOCK el
 alarm(5)
 let input = FileHandle.standardInput.readDataToEndOfFile()
 alarm(0)  // stdin done, cancel preliminary alarm
-if let inputStr = String(data: input, encoding: .utf8) {
-    debugLog("raw input: \(inputStr)")
-}
+debugLog("stdin bytes=\(input.count)")
 
 guard !input.isEmpty,
       var json = try? JSONSerialization.jsonObject(with: input) as? [String: Any] else {
