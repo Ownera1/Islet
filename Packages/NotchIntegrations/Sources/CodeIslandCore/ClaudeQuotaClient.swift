@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 /// The Claude Code OAuth login, as Claude Code itself stores it.
@@ -115,9 +116,75 @@ public enum ClaudeCredentialStore {
     }
 
     public static func load() -> ClaudeOAuthCredential? {
-        if let data = readKeychain(), let cred = parse(data) { return cred }
-        if let data = readFile(), let cred = parse(data) { return cred }
+        resolve(claudeHome: ClaudeConfigPaths.configDir())
+    }
+
+    /// Keychain service Claude Code uses for a given config dir. With
+    /// `$CLAUDE_CONFIG_DIR` set it appends the first 8 hex digits of the
+    /// SHA-256 of that (NFC) path, so two config dirs keep separate logins.
+    public static func scopedKeychainService(configDir: String) -> String {
+        let digest = SHA256.hash(data: Data(configDir.precomposedStringWithCanonicalMapping.utf8))
+        let hex = digest.map { String(format: "%02x", $0) }.joined()
+        return keychainService + "-" + String(hex.prefix(8))
+    }
+
+    /// The login for `claudeHome` (nil means Claude Code's default
+    /// `~/.claude`), read-only and without refreshing anything.
+    ///
+    /// Sources for the configured dir come first — its keychain item and its
+    /// `.credentials.json` — and only when it has none at all does the default
+    /// login stand in, so a custom dir never silently reports another
+    /// account's quota while it has a login of its own. Within one tier an
+    /// unexpired credential beats an expired one, then the later expiry wins
+    /// (Claude Code rewrites whichever copy it refreshed). An expired-only
+    /// result is still returned so the caller can say "run Claude Code once"
+    /// instead of "not signed in".
+    public static func resolve(
+        claudeHome: String?,
+        home: String = NSHomeDirectory(),
+        now: Date = Date(),
+        keychain: (String) -> Data? = { ClaudeCredentialStore.readKeychain(service: $0) },
+        file: (String) -> Data? = { FileManager.default.contents(atPath: $0) }
+    ) -> ClaudeOAuthCredential? {
+        for tier in sourceTiers(claudeHome: claudeHome, home: home) {
+            let found = tier.compactMap { source -> ClaudeOAuthCredential? in
+                switch source {
+                case .keychain(let service): return keychain(service).flatMap(parse)
+                case .file(let path): return file(path).flatMap(parse)
+                }
+            }
+            if let best = found.max(by: { rank($0, now: now) < rank($1, now: now) }) { return best }
+        }
         return nil
+    }
+
+    enum Source: Equatable {
+        case keychain(String)
+        case file(String)
+    }
+
+    /// Where to look, most specific tier first. Exposed for tests.
+    static func sourceTiers(claudeHome: String?, home: String) -> [[Source]] {
+        let defaultDir = ClaudeConfigPaths.canonical(home + "/.claude")
+        let configured = claudeHome
+            .flatMap { ClaudeConfigPaths.normalized($0, homeDir: home) }
+            .map(ClaudeConfigPaths.canonical) ?? defaultDir
+        let defaultTier: [Source] = [.keychain(keychainService), .file(defaultDir + "/.credentials.json")]
+        guard configured != defaultDir else {
+            // `CLAUDE_CONFIG_DIR=~/.claude` set explicitly still gets the hashed name.
+            return [defaultTier, [.keychain(scopedKeychainService(configDir: defaultDir))]]
+        }
+        return [
+            [.keychain(scopedKeychainService(configDir: configured)), .file(configured + "/.credentials.json")],
+            defaultTier,
+        ]
+    }
+
+    /// Orders credentials: unexpired over expired, then by expiry.
+    private static func rank(_ credential: ClaudeOAuthCredential, now: Date) -> (Int, Date) {
+        let expiry = credential.expiresAt ?? .distantPast
+        let usable = credential.expiresAt.map { $0 > now } ?? true
+        return (usable ? 1 : 0, expiry)
     }
 }
 

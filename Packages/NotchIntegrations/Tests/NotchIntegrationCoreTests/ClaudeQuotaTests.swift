@@ -168,6 +168,69 @@ final class ClaudeQuotaTests: XCTestCase {
         XCTAssertEqual(CountingProtocol.count, 1)
     }
 
+    // MARK: Credential resolution
+
+    private func credentialJSON(_ token: String, expiresAt: Date?) -> Data {
+        let expiry = expiresAt.map { ",\"expiresAt\":\(Int64($0.timeIntervalSince1970 * 1000))" } ?? ""
+        return Data("{\"claudeAiOauth\":{\"accessToken\":\"\(token)\"\(expiry)}}".utf8)
+    }
+
+    func testScopedKeychainServiceHashesTheConfigDir() {
+        let service = ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/test/.claude-work")
+        XCTAssertTrue(service.hasPrefix("Claude Code-credentials-"))
+        XCTAssertEqual(service.count, "Claude Code-credentials-".count + 8)
+        XCTAssertNotEqual(service, ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/test/.claude"))
+        // NFC and NFD spellings of one path name the same item.
+        XCTAssertEqual(
+            ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/te\u{0301}st/.claude"),
+            ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/t\u{00E9}st/.claude")
+        )
+    }
+
+    func testSourceTiersPutTheConfiguredDirFirst() {
+        let home = "/Users/test"
+        let scoped = ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/test/work")
+        XCTAssertEqual(ClaudeCredentialStore.sourceTiers(claudeHome: "~/work/", home: home), [
+            [.keychain(scoped), .file("/Users/test/work/.credentials.json")],
+            [.keychain("Claude Code-credentials"), .file("/Users/test/.claude/.credentials.json")],
+        ])
+        for dir in [nil, "/Users/test/.claude", "~/.claude", "  "] as [String?] {
+            XCTAssertEqual(ClaudeCredentialStore.sourceTiers(claudeHome: dir, home: home).first,
+                           [.keychain("Claude Code-credentials"), .file("/Users/test/.claude/.credentials.json")])
+        }
+    }
+
+    func testResolvePrefersTheConfiguredDirOverTheDefaultLogin() {
+        let home = "/Users/test"
+        let scoped = ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/test/work")
+        let later = now.addingTimeInterval(7200)
+        let keychain: [String: Data] = [
+            scoped: credentialJSON("work", expiresAt: now.addingTimeInterval(600)),
+            "Claude Code-credentials": credentialJSON("default", expiresAt: later),
+        ]
+        let resolved = ClaudeCredentialStore.resolve(claudeHome: "/Users/test/work", home: home, now: now,
+                                                     keychain: { keychain[$0] }, file: { _ in nil })
+        XCTAssertEqual(resolved?.accessToken, "work")
+        // No login of its own: the default one stands in.
+        let fallback = ClaudeCredentialStore.resolve(claudeHome: "/Users/test/other", home: home, now: now,
+                                                     keychain: { keychain[$0] }, file: { _ in nil })
+        XCTAssertEqual(fallback?.accessToken, "default")
+    }
+
+    func testResolvePicksTheFreshestUsableCopyWithinATier() {
+        let files: [String: Data] = [
+            "/Users/test/.claude/.credentials.json": credentialJSON("file", expiresAt: now.addingTimeInterval(3600)),
+        ]
+        let expiredKeychain = { (_: String) -> Data? in self.credentialJSON("stale", expiresAt: self.now.addingTimeInterval(-60)) }
+        XCTAssertEqual(ClaudeCredentialStore.resolve(claudeHome: nil, home: "/Users/test", now: now,
+                                                     keychain: expiredKeychain, file: { files[$0] })?.accessToken, "file")
+        // Only expired copies: still returned, so the caller reports "expired" rather than "not signed in".
+        XCTAssertEqual(ClaudeCredentialStore.resolve(claudeHome: nil, home: "/Users/test", now: now,
+                                                     keychain: expiredKeychain, file: { _ in nil })?.accessToken, "stale")
+        XCTAssertNil(ClaudeCredentialStore.resolve(claudeHome: nil, home: "/Users/test", now: now,
+                                                   keychain: { _ in nil }, file: { _ in nil }))
+    }
+
     // MARK: security(1) runner
 
     func testRunnerReturnsStdoutAndSecretIsTrimmed() throws {

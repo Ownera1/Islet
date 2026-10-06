@@ -149,8 +149,7 @@ public enum SubscriptionClient {
         switch provider {
         case .claude:
             let quota = try await ClaudeQuotaClient.fetch(credential: {
-                if let claudeHome, let data = ClaudeCredentialStore.readFile(claudeHome: claudeHome), let credential = ClaudeCredentialStore.parse(data) { return credential }
-                return ClaudeCredentialStore.load()
+                ClaudeCredentialStore.resolve(claudeHome: claudeHome, home: home)
             })
             let windows = quota.limits.map { UsageWindow(id: $0.kind.rawValue + ($0.scopeLabel ?? ""), label: $0.scopeLabel ?? ($0.kind == .session ? "5 小时" : "每周"), usedPercent: $0.percent, resetsAt: $0.resetsAt) }
             return SubscriptionUsage(provider: provider, plan: nil, windows: windows, fetchedAt: quota.fetchedAt)
