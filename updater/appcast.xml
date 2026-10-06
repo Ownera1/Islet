@@ -6,6 +6,30 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.10</title>
+            <pubDate>Tue, 06 Oct 2026 09:52:39 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>12</sparkle:version>
+            <sparkle:shortVersionString>0.1.10</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.10
+
+刘海跟随指针切换显示器，外接显示器亮度可直接调节，设置界面全面汉化。
+
+- 开启「刘海跟随指针切换显示器」后，刘海会移到指针停留的显示器上；刘海展开、拖放文件或显示提示时不切换。关闭后刘海固定在首选显示器，首选显示器断开时回退，重新连接后恢复。
+- 亮度键调节指针所在的显示器：内置屏和 Apple 显示器使用系统接口，其他外接显示器通过 DDC/CI 调节（Apple 芯片），亮度提示显示在刘海中；不支持的显示器交给系统处理。如果 BetterDisplay 等工具也接管了亮度键，建议在其中关闭，避免两个应用争抢按键。
+- 修复 HUD 开关显示开启却没有接管音量和亮度键的问题。现在 HUD 开启时会定时检查按键拦截，丢失后自动恢复；无法恢复时关闭开关并提示原因。
+- Agent 对话完成后展开的状态页会按设置的时间自动收起（设置 → Agent 与订阅 → 自动收起，默认 5 秒）；指针停在刘海上时保持展开，等待审批或回答时不收起。
+- 设置界面全部改为中文，并为含义不清的选项换了更直白的名称。
+- 修复退出 Islet 后，读取播放信息的后台进程残留的问题。
+
+更新后如果 HUD 开关被自动关闭，请到「系统设置 → 隐私与安全性 → 辅助功能」中删除旧的 Islet 条目，再在 Islet 设置中重新开启 HUD 并授权。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.10/Islet-0.1.10-build12-universal.zip" length="17987894" type="application/octet-stream" sparkle:edSignature="geaBtNuZZx5reqzewI5CCUM87IpN7XoBOAW3RJZlxMFAuzWc5Xt5+eY/oR/lAnT0nnSz2/xwHw1Che0GxOBGDA=="/>
+        </item>
+        <item>
             <title>0.1.9</title>
             <pubDate>Tue, 06 Oct 2026 06:18:12 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
@@ -84,24 +108,6 @@
 推荐安装此版本。提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新继续使用原有 Sparkle Ed25519 公钥。应用沿用 ad-hoc 签名，未经过 Apple 公证。
 ]]></description>
             <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.7/Islet-0.1.7-universal.zip" length="17590287" type="application/octet-stream" sparkle:edSignature="cD+7+v1TVjgw2iyqXS3sImiLrp3bgCzQFbIXtKoKxLirQRyXjnMYk4rEZcfj9JN6SOEI0mvY8+A4Kj37E7z/Cw=="/>
-        </item>
-        <item>
-            <title>0.1.5</title>
-            <pubDate>Mon, 05 Oct 2026 05:15:15 +0000</pubDate>
-            <link>https://github.com/Ownera1/Islet/releases</link>
-            <sparkle:version>6</sparkle:version>
-            <sparkle:shortVersionString>0.1.5</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.5
-
-- 修复自动切换显示器开关只更改透明度的问题。首选屏幕断开后可回退到可用屏幕，重新连接后自动切回；屏幕布局变化会重新定位。
-- 修复 HUD 权限检查与媒体键拦截位于不同进程的问题，统一由 Helper 处理。开启失败和连接中断会显示具体提示，保留音量、亮度、背光及修饰键操作。
-- Agent 页新增“全部 Agent”总览、按实时会话状态分组的下拉菜单，以及可持久化的单行／双行总览设置。框架名称保持完整显示，继续支持多会话、任务、审批和回答。
-- 收起态歌词可选择关闭、仅外接屏或所有显示器；支持当前句高亮、长句滚动、间奏、暂停和减少动态效果。内置刘海屏使用独立下方歌词条。
-
-提供 Apple Silicon 与 Intel 通用 DMG／ZIP。自动更新包使用原有 Sparkle Ed25519 公钥验签；应用沿用 ad-hoc 签名，未经过 Apple 公证。
-]]></description>
-            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.5/Islet-0.1.5-universal.zip" length="17590347" type="application/octet-stream" sparkle:edSignature="7aLfFl7FhZjpxw2oRoPSm6BFrczaf+2A7r79E499Dj8ykEf6ghvqZ7Bw8Itx/jWSE3DYsCSTPgNb44GpeftzCg=="/>
         </item>
     </channel>
 </rss>
