@@ -6,6 +6,8 @@ import NotchIntegrationCore
 extension AgentOverviewStyle: Defaults.Serializable {}
 extension Defaults.Keys {
     static let agentOverviewStyle = Key<AgentOverviewStyle>("agentOverviewStyle", default: .twoLine)
+    /// Seconds the notch stays open after a completion reveal; 0 keeps it open until the pointer leaves.
+    static let agentCompletionCollapseDelay = Key<Double>("agentCompletionCollapseDelay", default: 5)
 }
 
 struct AgentPanelView: View {

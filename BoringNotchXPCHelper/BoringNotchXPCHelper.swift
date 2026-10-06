@@ -54,6 +54,10 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
         DispatchQueue.main.async { self.mediaKeys.stop() }
     }
 
+    @objc func isMediaKeyTapActive(with reply: @escaping (Bool) -> Void) {
+        DispatchQueue.main.async { reply(self.mediaKeys.isActive) }
+    }
+
     private class KeyboardBrightnessClient {
         private static let keyboardID: UInt64 = 1
         private var clientInstance: NSObject?
@@ -120,62 +124,88 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
     // MARK: - Screen Brightness (moved from client app into helper)
 
     @objc func isScreenBrightnessAvailable(with reply: @escaping (Bool) -> Void) {
-        var b: Float = 0
-        reply(displayServicesGetBrightness(displayID: CGMainDisplayID(), out: &b) || ioServiceFor(displayID: CGMainDisplayID()) != nil)
+        reply(ScreenBrightness.get(ScreenBrightness.targetDisplay()) != nil)
     }
 
     @objc func currentScreenBrightness(with reply: @escaping (NSNumber?) -> Void) {
-        var b: Float = 0
-        if displayServicesGetBrightness(displayID: CGMainDisplayID(), out: &b) {
-            reply(NSNumber(value: b))
-            return
-        }
-        if let io = ioServiceFor(displayID: CGMainDisplayID()) {
-            var level: Float = 0
-            if IODisplayGetFloatParameter(io, 0, kIODisplayBrightnessKey as CFString, &level) == kIOReturnSuccess {
-                IOObjectRelease(io)
-                reply(NSNumber(value: level))
-                return
-            }
-            IOObjectRelease(io)
-        }
-        reply(nil)
+        reply(ScreenBrightness.get(ScreenBrightness.targetDisplay()).map { NSNumber(value: $0) })
     }
 
     @objc func setScreenBrightness(_ value: Float, with reply: @escaping (Bool) -> Void) {
-        let clamped = max(0, min(1, value))
-        if displayServicesSetBrightness(displayID: CGMainDisplayID(), value: clamped) {
-            reply(true)
-            return
-        }
-        if let io = ioServiceFor(displayID: CGMainDisplayID()) {
-            let ok = IODisplaySetFloatParameter(io, 0, kIODisplayBrightnessKey as CFString, clamped) == kIOReturnSuccess
-            IOObjectRelease(io)
-            reply(ok)
-            return
-        }
-        reply(false)
+        reply(ScreenBrightness.set(max(0, min(1, value)), on: ScreenBrightness.targetDisplay()))
+    }
+}
+
+/// Brightness through DisplayServices (Apple panels), IOKit, or DDC/CI for external
+/// monitors. Displays none of these can drive are left to the system.
+enum ScreenBrightness {
+    /// The display under the pointer when its brightness can be controlled, else the built-in panel.
+    static func targetDisplay() -> CGDirectDisplayID {
+        if let pointer = pointerDisplay(), isControllable(pointer) { return pointer }
+        return onlineDisplays().first(where: { CGDisplayIsBuiltin($0) != 0 }) ?? CGMainDisplayID()
     }
 
-    // MARK: - Private helpers for DisplayServices / IOKit access
-    private func displayServicesGetBrightness(displayID: CGDirectDisplayID, out: inout Float) -> Bool {
-        guard let sym = dlsym(DisplayServicesHandle.handle, "DisplayServicesGetBrightness") else { return false }
-        typealias Fn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
-        let fn = unsafeBitCast(sym, to: Fn.self)
-        var tmp: Float = 0
-        let r = fn(displayID, &tmp)
-        if r == 0 { out = tmp; return true }
+    /// Cheap enough for the event tap: DDC answers from cache and probes unknown monitors in the background.
+    static var pointerDisplayIsControllable: Bool {
+        guard let pointer = pointerDisplay() else { return true }
+        return isControllable(pointer)
+    }
+
+    private static func isControllable(_ displayID: CGDirectDisplayID) -> Bool {
+        if CGDisplayIsBuiltin(displayID) == 0, ExternalDisplayDDC.shared.isControllable(displayID) { return true }
+        return nativeGet(displayID) != nil
+    }
+
+    static func get(_ displayID: CGDirectDisplayID) -> Float? {
+        if let value = nativeGet(displayID) { return value }
+        return CGDisplayIsBuiltin(displayID) == 0 ? ExternalDisplayDDC.shared.brightness(displayID) : nil
+    }
+
+    private static func nativeGet(_ displayID: CGDirectDisplayID) -> Float? {
+        if let sym = dlsym(DisplayServicesHandle.handle, "DisplayServicesGetBrightness") {
+            typealias Fn = @convention(c) (CGDirectDisplayID, UnsafeMutablePointer<Float>) -> Int32
+            var value: Float = 0
+            if unsafeBitCast(sym, to: Fn.self)(displayID, &value) == 0 { return value }
+        }
+        guard let io = ioServiceFor(displayID: displayID) else { return nil }
+        defer { IOObjectRelease(io) }
+        var level: Float = 0
+        return IODisplayGetFloatParameter(io, 0, kIODisplayBrightnessKey as CFString, &level) == kIOReturnSuccess ? level : nil
+    }
+
+    static func set(_ value: Float, on displayID: CGDirectDisplayID) -> Bool {
+        // DisplayServices reports success even for monitors it cannot drive (a DDC monitor
+        // returns 0 on set but fails get), so only trust native control where it can read.
+        guard nativeGet(displayID) != nil else {
+            return CGDisplayIsBuiltin(displayID) == 0 && ExternalDisplayDDC.shared.setBrightness(value, on: displayID)
+        }
+        if let sym = dlsym(DisplayServicesHandle.handle, "DisplayServicesSetBrightness") {
+            typealias Fn = @convention(c) (CGDirectDisplayID, Float) -> Int32
+            if unsafeBitCast(sym, to: Fn.self)(displayID, value) == 0 { return true }
+        }
+        if let io = ioServiceFor(displayID: displayID) {
+            defer { IOObjectRelease(io) }
+            if IODisplaySetFloatParameter(io, 0, kIODisplayBrightnessKey as CFString, value) == kIOReturnSuccess { return true }
+        }
         return false
     }
 
-    private func displayServicesSetBrightness(displayID: CGDirectDisplayID, value: Float) -> Bool {
-        guard let sym = dlsym(DisplayServicesHandle.handle, "DisplayServicesSetBrightness") else { return false }
-        typealias Fn = @convention(c) (CGDirectDisplayID, Float) -> Int32
-        let fn = unsafeBitCast(sym, to: Fn.self)
-        return fn(displayID, value) == 0
+    private static func pointerDisplay() -> CGDirectDisplayID? {
+        guard let location = CGEvent(source: nil)?.location else { return nil }
+        var display: CGDirectDisplayID = 0
+        var count: UInt32 = 0
+        guard CGGetDisplaysWithPoint(location, 1, &display, &count) == .success, count > 0 else { return nil }
+        return display
     }
 
-    private func ioServiceFor(displayID: CGDirectDisplayID) -> io_service_t? {
+    private static func onlineDisplays() -> [CGDirectDisplayID] {
+        var displays = [CGDirectDisplayID](repeating: 0, count: 16)
+        var count: UInt32 = 0
+        guard CGGetOnlineDisplayList(16, &displays, &count) == .success else { return [] }
+        return Array(displays.prefix(Int(count)))
+    }
+
+    private static func ioServiceFor(displayID: CGDirectDisplayID) -> io_service_t? {
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IODisplayConnect"), &iterator) == kIOReturnSuccess else { return nil }
         defer { IOObjectRelease(iterator) }

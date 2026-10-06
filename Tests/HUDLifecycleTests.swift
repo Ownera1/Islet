@@ -51,6 +51,21 @@ import AppKit
         client.pending.removeFirst().resume(returning: (true, nil))
         await new.value
         precondition(interceptor.isRunning)
-        print("Passed HUD failure, retry, modifiers, disconnect and delayed XPC lifecycle checks.")
+
+        // A cancelled caller no longer abandons the start halfway with the switch left on.
+        interceptor.stop()
+        client.deferred = false
+        let cancelled = Task { await interceptor.start() }
+        cancelled.cancel()
+        await cancelled.value
+        precondition(interceptor.isRunning && Defaults[.hudReplacement])
+
+        // The helper loses its tap without telling the app: supervision restarts it.
+        let starts = client.startCount
+        client.tapActive = false
+        try? await Task.sleep(for: .seconds(3.5))
+        precondition(client.startCount > starts && interceptor.isRunning, "Supervisor must restart a dead tap")
+        client.tapActive = true
+        print("Passed HUD failure, retry, modifiers, disconnect, delayed XPC, cancellation and supervision checks.")
     }
 }

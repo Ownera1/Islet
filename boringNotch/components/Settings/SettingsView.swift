@@ -29,31 +29,31 @@ struct SettingsView: View {
         NavigationSplitView {
             List(selection: $selectedTab) {
                 NavigationLink(value: "General") {
-                    Label("General", systemImage: "gear")
+                    Label("通用", systemImage: "gear")
                 }
                 NavigationLink(value: "Appearance") {
-                    Label("Appearance", systemImage: "eye")
+                    Label("外观", systemImage: "eye")
                 }
                 NavigationLink(value: "Media") {
-                    Label("Media", systemImage: "play.laptopcomputer")
+                    Label("媒体", systemImage: "play.laptopcomputer")
                 }
                 NavigationLink(value: "Calendar") {
-                    Label("Calendar", systemImage: "calendar")
+                    Label("日历", systemImage: "calendar")
                 }
                 NavigationLink(value: "HUD") {
-                    Label("HUDs", systemImage: "dial.medium.fill")
+                    Label("音量与亮度提示", systemImage: "dial.medium.fill")
                 }
                 NavigationLink(value: "Battery") {
-                    Label("Battery", systemImage: "battery.100.bolt")
+                    Label("电池", systemImage: "battery.100.bolt")
                 }
 //                NavigationLink(value: "Downloads") {
 //                    Label("Downloads", systemImage: "square.and.arrow.down")
 //                }
                 NavigationLink(value: "Shelf") {
-                    Label("Shelf", systemImage: "books.vertical")
+                    Label("暂存器", systemImage: "books.vertical")
                 }
                 NavigationLink(value: "Shortcuts") {
-                    Label("Shortcuts", systemImage: "keyboard")
+                    Label("快捷键", systemImage: "keyboard")
                 }
                 // NavigationLink(value: "Extensions") {
                 //     Label("Extensions", systemImage: "puzzlepiece.extension")
@@ -62,10 +62,10 @@ struct SettingsView: View {
                     Label("Agent 与订阅", systemImage: "terminal")
                 }
                 NavigationLink(value: "Advanced") {
-                    Label("Advanced", systemImage: "gearshape.2")
+                    Label("高级", systemImage: "gearshape.2")
                 }
                 NavigationLink(value: "About") {
-                    Label("About", systemImage: "info.circle")
+                    Label("关于", systemImage: "info.circle")
                 }
             }
             .listStyle(SidebarListStyle())
@@ -162,18 +162,18 @@ struct GeneralSettings: View {
                     get: { Defaults[.menubarIcon] },
                     set: { Defaults[.menubarIcon] = $0 }
                 )) {
-                    Text("Show menu bar icon")
+                    Text("显示菜单栏图标")
                 }
                 .tint(.effectiveAccent)
-                LaunchAtLogin.Toggle("Launch at login")
+                LaunchAtLogin.Toggle("登录时启动")
                 Defaults.Toggle(key: .showOnAllDisplays) {
-                    Text("Show on all displays")
+                    Text("在所有显示器上显示刘海")
                 }
                 .onChange(of: showOnAllDisplays) {
                     NotificationCenter.default.post(
                         name: Notification.Name.showOnAllDisplaysChanged, object: nil)
                 }
-                Picker("Preferred display", selection: $coordinator.preferredScreenUUID) {
+                Picker("首选显示器", selection: $coordinator.preferredScreenUUID) {
                     ForEach(screens, id: \.uuid) { screen in
                         Text(screen.name).tag(screen.uuid as String?)
                     }
@@ -187,8 +187,8 @@ struct GeneralSettings: View {
                 .disabled(showOnAllDisplays)
                 
                 Defaults.Toggle(key: .automaticallySwitchDisplay) {
-                    Text("Automatically switch displays")
-                        .help("首选显示器断开时切到可用显示器，重新连接后自动切回。")
+                    Text("刘海跟随指针切换显示器")
+                        .help("刘海跟随指针所在的显示器；刘海展开时不切换。关闭后固定在首选显示器。")
                 }
                     .onChange(of: automaticallySwitchDisplay) {
                         NotificationCenter.default.post(
@@ -196,20 +196,20 @@ struct GeneralSettings: View {
                     }
                     .disabled(showOnAllDisplays)
             } header: {
-                Text("System features")
+                Text("显示器与启动")
             }
 
             Section {
                 Picker(
                     selection: $notchHeightMode,
                     label:
-                        Text("Notch height on notch displays")
+                        Text("有刘海屏幕上的高度")
                 ) {
-                    Text("Match real notch height")
+                    Text("与实体刘海等高")
                         .tag(WindowHeightMode.matchRealNotchSize)
-                    Text("Match menu bar height")
+                    Text("与菜单栏等高")
                         .tag(WindowHeightMode.matchMenuBar)
-                    Text("Custom height")
+                    Text("自定义高度")
                         .tag(WindowHeightMode.custom)
                 }
                 .onChange(of: notchHeightMode) {
@@ -226,19 +226,19 @@ struct GeneralSettings: View {
                 }
                 if notchHeightMode == .custom {
                     Slider(value: $notchHeight, in: 15...45, step: 1) {
-                        Text("Custom notch size - \(notchHeight, specifier: "%.0f")")
+                        Text("自定义高度：\(notchHeight, specifier: "%.0f") 点")
                     }
                     .onChange(of: notchHeight) {
                         NotificationCenter.default.post(
                             name: Notification.Name.notchHeightChanged, object: nil)
                     }
                 }
-                Picker("Notch height on non-notch displays", selection: $nonNotchHeightMode) {
-                    Text("Match menubar height")
+                Picker("无刘海屏幕上的高度", selection: $nonNotchHeightMode) {
+                    Text("与菜单栏等高")
                         .tag(WindowHeightMode.matchMenuBar)
-                    Text("Match real notch height")
+                    Text("与实体刘海等高")
                         .tag(WindowHeightMode.matchRealNotchSize)
-                    Text("Custom height")
+                    Text("自定义高度")
                         .tag(WindowHeightMode.custom)
                 }
                 .onChange(of: nonNotchHeightMode) {
@@ -255,7 +255,7 @@ struct GeneralSettings: View {
                 }
                 if nonNotchHeightMode == .custom {
                     Slider(value: $nonNotchHeight, in: 0...40, step: 1) {
-                        Text("Custom notch size - \(nonNotchHeight, specifier: "%.0f")")
+                        Text("自定义高度：\(nonNotchHeight, specifier: "%.0f") 点")
                     }
                     .onChange(of: nonNotchHeight) {
                         NotificationCenter.default.post(
@@ -263,7 +263,7 @@ struct GeneralSettings: View {
                     }
                 }
             } header: {
-                Text("Notch sizing")
+                Text("刘海尺寸")
             }
 
             NotchBehaviour()
@@ -271,13 +271,13 @@ struct GeneralSettings: View {
             gestureControls()
         }
         .toolbar {
-            Button("Quit app") {
+            Button("退出 Islet") {
                 NSApp.terminate(self)
             }
             .controlSize(.extraLarge)
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("General")
+        .navigationTitle("通用")
         .onChange(of: openNotchOnHover) {
             if !openNotchOnHover {
                 enableGestures = true
@@ -289,22 +289,22 @@ struct GeneralSettings: View {
     func gestureControls() -> some View {
         Section {
             Defaults.Toggle(key: .enableGestures) {
-                Text("Enable gestures")
+                Text("启用触控板手势")
             }
                 .disabled(!openNotchOnHover)
             if enableGestures {
-                Toggle("Change media with horizontal gestures", isOn: .constant(false))
+                Toggle("左右轻扫切换歌曲", isOn: .constant(false))
                     .disabled(true)
                 Defaults.Toggle(key: .closeGestureEnabled) {
-                    Text("Close gesture")
+                    Text("双指上滑收起刘海")
                 }
                 Slider(value: $gestureSensitivity, in: 100...300, step: 100) {
                     HStack {
-                        Text("Gesture sensitivity")
+                        Text("手势灵敏度")
                         Spacer()
                         Text(
                             Defaults[.gestureSensitivity] == 100
-                                ? "High" : Defaults[.gestureSensitivity] == 200 ? "Medium" : "Low"
+                                ? "高" : Defaults[.gestureSensitivity] == 200 ? "中" : "低"
                         )
                         .foregroundStyle(.secondary)
                     }
@@ -312,12 +312,12 @@ struct GeneralSettings: View {
             }
         } header: {
             HStack {
-                Text("Gesture control")
-                customBadge(text: "Beta")
+                Text("手势控制")
+                customBadge(text: "测试版")
             }
         } footer: {
             Text(
-                "Swipe up with two fingers on the top navigation area to close. Content areas only scroll. Swipe down on the closed notch to open when **Open notch on hover** is disabled."
+                "在顶部页面按钮区域双指上滑可收起刘海，内容区域只会滚动。关闭“指针悬停时展开刘海”后，可在收起的刘海上双指下滑来展开。"
             )
             .multilineTextAlignment(.trailing)
             .foregroundStyle(.secondary)
@@ -329,18 +329,18 @@ struct GeneralSettings: View {
     func NotchBehaviour() -> some View {
         Section {
             Defaults.Toggle(key: .openNotchOnHover) {
-                Text("Open notch on hover")
+                Text("指针悬停时展开刘海")
             }
             Defaults.Toggle(key: .enableHaptics) {
-                    Text("Enable haptic feedback")
+                    Text("触控板触感反馈")
             }
-            Toggle("Remember last tab", isOn: $coordinator.openLastTabByDefault)
+            Toggle("展开时回到上次打开的页面", isOn: $coordinator.openLastTabByDefault)
             if openNotchOnHover {
                 Slider(value: $minimumHoverDuration, in: 0...1, step: 0.1) {
                     HStack {
-                        Text("Hover delay")
+                        Text("悬停多久后展开")
                         Spacer()
-                        Text("\(minimumHoverDuration, specifier: "%.1f")s")
+                        Text("\(minimumHoverDuration, specifier: "%.1f") 秒")
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -350,7 +350,7 @@ struct GeneralSettings: View {
                 }
             }
         } header: {
-            Text("Notch behavior")
+            Text("展开与收起")
         }
     }
 }
@@ -360,23 +360,23 @@ struct Charge: View {
         Form {
             Section {
                 Defaults.Toggle(key: .showBatteryIndicator) {
-                    Text("Show battery indicator")
+                    Text("在刘海中显示电池")
                 }
                 Defaults.Toggle(key: .showPowerStatusNotifications) {
-                    Text("Show power status notifications")
+                    Text("接通或断开电源时提示")
                 }
             } header: {
-                Text("General")
+                Text("通用")
             }
             Section {
                 Defaults.Toggle(key: .showBatteryPercentage) {
-                    Text("Show battery percentage")
+                    Text("显示电量百分比")
                 }
                 Defaults.Toggle(key: .showPowerStatusIcons) {
-                    Text("Show power status icons")
+                    Text("显示充电状态图标")
                 }
             } header: {
-                Text("Battery Information")
+                Text("电池信息")
             }
         }
         .onAppear {
@@ -385,7 +385,7 @@ struct Charge: View {
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Battery")
+        .navigationTitle("电池")
     }
 }
 
@@ -484,9 +484,9 @@ struct HUD: View {
             Section {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Replace system HUD")
+                        Text("用刘海替换系统音量与亮度提示")
                             .font(.headline)
-                        Text("Replaces the standard macOS volume, display brightness, and keyboard brightness HUDs with a custom design.")
+                        Text("调节音量、屏幕亮度或键盘背光时，在刘海中显示提示，代替 macOS 自带的弹窗。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
@@ -506,12 +506,12 @@ struct HUD: View {
                 }
                 if !accessibilityAuthorized {
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Accessibility access is required to replace the system HUD.")
+                        Text("替换系统提示需要“辅助功能”权限。")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
 
                         HStack(spacing: 12) {
-                            Button("Request Accessibility") {
+                            Button("授予辅助功能权限") {
                                 XPCHelperClient.shared.requestAccessibilityAuthorization()
                                 NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
                             }
@@ -523,50 +523,50 @@ struct HUD: View {
             }
             
             Section {
-                Picker("Option key behaviour", selection: $optionKeyAction) {
+                Picker("按住 ⌥ 再按音量或亮度键时", selection: $optionKeyAction) {
                     ForEach(OptionKeyAction.allCases) { opt in
-                        Text(opt.rawValue).tag(opt)
+                        Text(opt.displayName).tag(opt)
                     }
                 }
                 
-                Picker("Progress bar style", selection: $enableGradient) {
-                    Text("Hierarchical")
+                Picker("进度条样式", selection: $enableGradient) {
+                    Text("单色")
                         .tag(false)
-                    Text("Gradient")
+                    Text("渐变")
                         .tag(true)
                 }
                 Defaults.Toggle(key: .systemEventIndicatorShadow) {
-                    Text("Enable glowing effect")
+                    Text("进度条发光")
                 }
                 Defaults.Toggle(key: .systemEventIndicatorUseAccent) {
-                    Text("Tint progress bar with accent color")
+                    Text("进度条使用强调色")
                 }
             } header: {
-                Text("General")
+                Text("通用")
             }
             .disabled(!hudReplacement)
             
             Section {
                 Defaults.Toggle(key: .showOpenNotchHUD) {
-                    Text("Show HUD in open notch")
+                    Text("刘海展开时也显示提示")
                 }
                 Defaults.Toggle(key: .showOpenNotchHUDPercentage) {
-                    Text("Show percentage")
+                    Text("显示百分比")
                 }
                 .disabled(!Defaults[.showOpenNotchHUD])
             } header: {
                 HStack {
-                    Text("Open Notch")
-                    customBadge(text: "Beta")
+                    Text("刘海展开时")
+                    customBadge(text: "测试版")
                 }
             }
             .disabled(!hudReplacement)
             
             Section {
-                Picker("HUD style", selection: $inlineHUD) {
-                    Text("Default")
+                Picker("收起时的提示样式", selection: $inlineHUD) {
+                    Text("在刘海下方展开")
                         .tag(false)
-                    Text("Inline")
+                    Text("在刘海两侧显示")
                         .tag(true)
                 }
                 .onChange(of: Defaults[.inlineHUD]) {
@@ -579,15 +579,15 @@ struct HUD: View {
                 }
                 
                 Defaults.Toggle(key: .showClosedNotchHUDPercentage) {
-                    Text("Show percentage")
+                    Text("显示百分比")
                 }
             } header: {
-                Text("Closed Notch")
+                Text("刘海收起时")
             }
             .disabled(!Defaults[.hudReplacement])
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("HUDs")
+        .navigationTitle("音量与亮度提示")
         .task {
             accessibilityAuthorized = await XPCHelperClient.shared.isAccessibilityAuthorized()
         }
@@ -620,9 +620,9 @@ struct Media: View {
     var body: some View {
         Form {
             Section {
-                Picker("Music Source", selection: $mediaController) {
+                Picker("从哪里读取播放信息", selection: $mediaController) {
                     ForEach(availableMediaControllers) { controller in
-                        Text(controller.rawValue).tag(controller)
+                        Text(controller.displayName).tag(controller)
                     }
                 }
                 .onChange(of: mediaController) { _, _ in
@@ -632,11 +632,11 @@ struct Media: View {
                     )
                 }
             } header: {
-                Text("Media Source")
+                Text("音乐来源")
             } footer: {
                 if MusicManager.shared.isNowPlayingDeprecated {
                     HStack {
-                        Text("YouTube Music requires this third-party app to be installed: ")
+                        Text("使用 YouTube Music 需要先安装这个第三方应用：")
                             .foregroundStyle(.secondary)
                             .font(.caption)
                         Link(
@@ -648,7 +648,7 @@ struct Media: View {
                     }
                 } else {
                     Text(
-                        "'Now Playing' was the only option on previous versions and works with all media apps."
+                        "“系统正在播放”适用于所有媒体应用，也是旧版本唯一的来源。"
                     )
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -657,21 +657,21 @@ struct Media: View {
             
             Section {
                 Toggle(
-                    "Show music live activity",
+                    "收起时显示正在播放的音乐",
                     isOn: $coordinator.musicLiveActivityEnabled.animation()
                 )
-                Toggle("Show sneak peek on playback changes", isOn: $enableSneakPeek)
-                Picker("Sneak Peek Style", selection: $sneakPeekStyles) {
+                Toggle("切歌时在刘海下方短暂显示歌曲信息", isOn: $enableSneakPeek)
+                Picker("歌曲信息显示样式", selection: $sneakPeekStyles) {
                     ForEach(SneakPeekStyle.allCases) { style in
-                        Text(style.rawValue).tag(style)
+                        Text(style.displayName).tag(style)
                     }
                 }
                 HStack {
                     Stepper(value: $waitInterval, in: 0...10, step: 1) {
                         HStack {
-                            Text("Media inactivity timeout")
+                            Text("暂停后多久收起播放信息")
                             Spacer()
-                            Text("\(Defaults[.waitInterval], specifier: "%.0f") seconds")
+                            Text("\(Defaults[.waitInterval], specifier: "%.0f") 秒")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -680,17 +680,17 @@ struct Media: View {
                     selection: $hideNotchOption,
                     label:
                         HStack {
-                            Text("Full screen behavior")
-                            customBadge(text: "Beta")
+                            Text("全屏时隐藏刘海")
+                            customBadge(text: "测试版")
                         }
                 ) {
-                    Text("Hide for all apps").tag(HideNotchOption.always)
-                    Text("Hide for media app only").tag(
+                    Text("任何应用全屏时").tag(HideNotchOption.always)
+                    Text("仅播放器全屏时").tag(
                         HideNotchOption.nowPlayingOnly)
-                    Text("Never hide").tag(HideNotchOption.never)
+                    Text("从不隐藏").tag(HideNotchOption.never)
                 }
             } header: {
-                Text("Media playback live activity")
+                Text("播放状态")
             }
             
             Section {
@@ -698,7 +698,7 @@ struct Media: View {
                 Defaults.Toggle(key: .enableLyrics) {
                     HStack {
                         Text("显示播放歌词")
-                        customBadge(text: "Beta")
+                        customBadge(text: "测试版")
                     }
                 }
                 Picker("收起时显示歌词", selection: $collapsedLyricsMode) {
@@ -725,15 +725,15 @@ struct Media: View {
                 Text("正值让歌词提前，负值让歌词延后；普通 LRC 扫光为估算。")
                     .font(.caption).foregroundStyle(.secondary)
             } header: {
-                Text("Media controls")
+                Text("播放控制与歌词")
             }  footer: {
-                Text("Customize which controls appear in the music player. Volume expands when active.")
+                Text("自定义播放器里显示哪些控制按钮。音量按钮点按后会展开。")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Media")
+        .navigationTitle("媒体")
     }
 
     // Only show controller options that are available on this macOS version
@@ -756,27 +756,27 @@ struct CalendarSettings: View {
     var body: some View {
         Form {
             Defaults.Toggle(key: .showCalendar) {
-                Text("Show calendar")
+                Text("在刘海中显示日历")
             }
             Defaults.Toggle(key: .hideCompletedReminders) {
-                Text("Hide completed reminders")
+                Text("隐藏已完成的提醒事项")
             }
             Defaults.Toggle(key: .hideAllDayEvents) {
-                Text("Hide all-day events")
+                Text("隐藏全天日程")
             }
             Defaults.Toggle(key: .autoScrollToNextEvent) {
-                Text("Auto-scroll to next event")
+                Text("自动滚动到下一个日程")
             }
             Defaults.Toggle(key: .showFullEventTitles) {
-                Text("Always show full event titles")
+                Text("始终显示完整日程标题")
             }
-            Section(header: Text("Calendars")) {
+            Section(header: Text("显示哪些日历")) {
                 if calendarManager.calendarAuthorizationStatus != .fullAccess {
-                    Text("Calendar access is denied. Please enable it in System Settings.")
+                    Text("没有日历访问权限，请在系统设置中开启。")
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
                         .padding()
-                    Button("Open Calendar Settings") {
+                    Button("打开日历权限设置") {
                         if let settingsURL = URL(
                             string:
                                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars"
@@ -806,13 +806,13 @@ struct CalendarSettings: View {
                     }
                 }
             }
-            Section(header: Text("Reminders")) {
+            Section(header: Text("显示哪些提醒事项列表")) {
                 if calendarManager.reminderAuthorizationStatus != .fullAccess {
-                    Text("Reminder access is denied. Please enable it in System Settings.")
+                    Text("没有提醒事项访问权限，请在系统设置中开启。")
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
                         .padding()
-                    Button("Open Reminder Settings") {
+                    Button("打开提醒事项权限设置") {
                         if let settingsURL = URL(
                             string:
                                 "x-apple.systempreferences:com.apple.preference.security?Privacy_Reminders"
@@ -844,7 +844,7 @@ struct CalendarSettings: View {
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Calendar")
+        .navigationTitle("日历")
         .onAppear {
             Task {
                 await calendarManager.checkCalendarAuthorization()
@@ -880,19 +880,19 @@ struct About: View {
             Form {
                 Section {
                     HStack {
-                        Text("Release name")
+                        Text("版本代号")
                         Spacer()
                         Text(Defaults[.releaseName])
                             .foregroundStyle(.secondary)
                     }
                     HStack {
-                        Text("Version")
+                        Text("版本")
                         Spacer()
                         if showBuildNumber {
                             Text("(\(Bundle.main.buildVersionNumber ?? ""))")
                                 .foregroundStyle(.secondary)
                         }
-                        Text(Bundle.main.releaseVersionNumber ?? "unkown")
+                        Text(Bundle.main.releaseVersionNumber ?? "未知")
                             .foregroundStyle(.secondary)
                     }
                     .onTapGesture {
@@ -901,7 +901,7 @@ struct About: View {
                         }
                     }
                 } header: {
-                    Text("Version info")
+                    Text("版本信息")
                 }
 
                 UpdaterSettingsView(updater: updaterController.updater)
@@ -942,7 +942,7 @@ struct About: View {
             //            .controlSize(.extraLarge)
             CheckForUpdatesView(updater: updaterController.updater)
         }
-        .navigationTitle("About")
+        .navigationTitle("关于")
     }
 }
 
@@ -965,13 +965,13 @@ struct Shelf: View {
         Form {
             Section {
                 Defaults.Toggle(key: .boringShelf) {
-                    Text("Enable shelf")
+                    Text("启用暂存器")
                 }
                 Defaults.Toggle(key: .openShelfByDefault) {
-                    Text("Open shelf by default if items are present")
+                    Text("暂存器里有文件时，展开刘海先显示暂存器")
                 }
                 Defaults.Toggle(key: .expandedDragDetection) {
-                    Text("Expanded drag detection area")
+                    Text("拖动文件到屏幕顶部附近即展开刘海")
                 }
                 .onChange(of: expandedDragDetection) {
                     NotificationCenter.default.post(
@@ -980,20 +980,20 @@ struct Shelf: View {
                     )
                 }
                 Defaults.Toggle(key: .copyOnDrag) {
-                    Text("Copy items on drag")
+                    Text("拖出文件时复制而不是移动")
                 }
                 Defaults.Toggle(key: .autoRemoveShelfItems) {
-                    Text("Remove from shelf after dragging")
+                    Text("拖出后从暂存器移除")
                 }
 
             } header: {
                 HStack {
-                    Text("General")
+                    Text("通用")
                 }
             }
             
             Section {
-                Picker("Quick Share Service", selection: $quickShareProvider) {
+                Picker("分享方式", selection: $quickShareProvider) {
                     ForEach(quickShareService.availableProviders, id: \.id) { provider in
                         HStack {
                             Group {
@@ -1028,10 +1028,10 @@ struct Shelf: View {
                         .frame(width: 16, height: 16)
                         .foregroundColor(.accentColor)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("Currently selected: \(selectedProvider.id)")
+                            Text("当前：\(selectedProvider.id)")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            Text("Files dropped on the shelf will be shared via this service")
+                            Text("拖到暂存器分享按钮上的文件会通过这种方式分享")
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
@@ -1042,16 +1042,16 @@ struct Shelf: View {
                 
             } header: {
                 HStack {
-                    Text("Quick Share")
+                    Text("快速分享")
                 }
             } footer: {
-                Text("Choose which service to use when sharing files from the shelf. Click the shelf button to select files, or drag files onto it to share immediately.")
+                Text("选择从暂存器分享文件时使用的服务。点按分享按钮选择文件，或把文件直接拖到按钮上立即分享。")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Shelf")
+        .navigationTitle("暂存器")
     }
 }
 
@@ -1212,43 +1212,43 @@ struct Appearance: View {
     var body: some View {
         Form {
             Section {
-                Toggle("Always show tabs", isOn: $coordinator.alwaysShowTabs)
+                Toggle("始终显示顶部页面按钮", isOn: $coordinator.alwaysShowTabs)
                 Defaults.Toggle(key: .settingsIconInNotch) {
-                    Text("Show settings icon in notch")
+                    Text("在刘海中显示设置按钮")
                 }
 
             } header: {
-                Text("General")
+                Text("通用")
             }
 
             Section {
                 Defaults.Toggle(key: .coloredSpectrogram) {
-                    Text("Colored spectrogram")
+                    Text("彩色音频频谱")
                 }
                 Defaults
-                    .Toggle("Player tinting", key: .playerColorTinting)
+                    .Toggle("歌名文字跟随封面颜色", key: .playerColorTinting)
                 Defaults.Toggle(key: .lightingEffect) {
-                    Text("Enable blur effect behind album art")
+                    Text("专辑封面后方显示模糊光晕")
                 }
-                Picker("Slider color", selection: $sliderColor) {
+                Picker("播放进度条颜色", selection: $sliderColor) {
                     ForEach(SliderColorEnum.allCases, id: \.self) { option in
-                        Text(option.rawValue)
+                        Text(option.displayName)
                     }
                 }
             } header: {
-                Text("Media")
+                Text("媒体")
             }
 
             Section {
                 Toggle(
-                    "Use music visualizer spectrogram",
+                    "使用音频频谱动画",
                     isOn: $useMusicVisualizer.animation()
                 )
                 .disabled(true)
                 if !useMusicVisualizer {
                     if customVisualizers.count > 0 {
                         Picker(
-                            "Selected animation",
+                            "当前动画",
                             selection: $selectedVisualizer
                         ) {
                             ForEach(
@@ -1261,17 +1261,17 @@ struct Appearance: View {
                         }
                     } else {
                         HStack {
-                            Text("Selected animation")
+                            Text("当前动画")
                             Spacer()
-                            Text("No custom animation available")
+                            Text("没有可用的自定义动画")
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
             } header: {
                 HStack {
-                    Text("Custom music live activity animation")
-                    customBadge(text: "Coming soon")
+                    Text("收起时的播放动画")
+                    customBadge(text: "即将推出")
                 }
             }
 
@@ -1287,7 +1287,7 @@ struct Appearance: View {
                             Text(visualizer.name)
                             Spacer(minLength: 0)
                             if selectedVisualizer == visualizer {
-                                Text("selected")
+                                Text("使用中")
                                     .font(.caption)
                                     .fontWeight(.medium)
                                     .foregroundStyle(.secondary)
@@ -1350,22 +1350,22 @@ struct Appearance: View {
                 .buttonStyle(PlainButtonStyle())
                 .overlay {
                     if customVisualizers.isEmpty {
-                        Text("No custom visualizer")
+                        Text("还没有自定义动画")
                             .foregroundStyle(Color(.secondaryLabelColor))
                             .padding(.bottom, 22)
                     }
                 }
                 .sheet(isPresented: $isPresented) {
                     VStack(alignment: .leading) {
-                        Text("Add new visualizer")
+                        Text("添加自定义动画")
                             .font(.largeTitle.bold())
                             .padding(.vertical)
-                        TextField("Name", text: $name)
-                        TextField("Lottie JSON URL", text: $url)
+                        TextField("名称", text: $name)
+                        TextField("Lottie JSON 链接", text: $url)
                         HStack {
-                            Text("Speed")
+                            Text("播放速度")
                             Spacer(minLength: 80)
-                            Text("\(speed, specifier: "%.1f")s")
+                            Text("\(speed, specifier: "%.1f")×")
                                 .multilineTextAlignment(.trailing)
                                 .foregroundStyle(.secondary)
                             Slider(value: $speed, in: 0...2, step: 0.1)
@@ -1375,7 +1375,7 @@ struct Appearance: View {
                             Button {
                                 isPresented.toggle()
                             } label: {
-                                Text("Cancel")
+                                Text("取消")
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
 
@@ -1393,7 +1393,7 @@ struct Appearance: View {
 
                                 isPresented.toggle()
                             } label: {
-                                Text("Add")
+                                Text("添加")
                                     .frame(maxWidth: .infinity, alignment: .center)
                             }
                             .buttonStyle(BorderedProminentButtonStyle())
@@ -1405,7 +1405,7 @@ struct Appearance: View {
                 }
             } header: {
                 HStack(spacing: 0) {
-                    Text("Custom vizualizers (Lottie)")
+                    Text("自定义动画（Lottie）")
                     if !Defaults[.customVisualizers].isEmpty {
                         Text(" – \(Defaults[.customVisualizers].count)")
                             .foregroundStyle(.secondary)
@@ -1415,26 +1415,26 @@ struct Appearance: View {
 
             Section {
                 Defaults.Toggle(key: .showMirror) {
-                    Text("Enable boring mirror")
+                    Text("启用镜子（摄像头预览）")
                 }
                     .disabled(!checkVideoInput())
-                Picker("Mirror shape", selection: $mirrorShape) {
-                    Text("Circle")
+                Picker("镜子形状", selection: $mirrorShape) {
+                    Text("圆形")
                         .tag(MirrorShapeEnum.circle)
-                    Text("Square")
+                    Text("方形")
                         .tag(MirrorShapeEnum.rectangle)
                 }
                 Defaults.Toggle(key: .showNotHumanFace) {
-                    Text("Show cool face animation while inactive")
+                    Text("没有播放时在刘海中显示表情动画")
                 }
             } header: {
                 HStack {
-                    Text("Additional features")
+                    Text("其他功能")
                 }
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Appearance")
+        .navigationTitle("外观")
     }
 
     func checkVideoInput() -> Bool {
@@ -1490,9 +1490,9 @@ struct Advanced: View {
             Section {
                 VStack(alignment: .leading, spacing: 16) {
                     // Toggle between system and custom
-                    Picker("Accent color", selection: $useCustomAccentColor) {
-                        Text("System").tag(false)
-                        Text("Custom").tag(true)
+                    Picker("强调色", selection: $useCustomAccentColor) {
+                        Text("跟随系统").tag(false)
+                        Text("自定义").tag(true)
                     }
                     .pickerStyle(.segmented)
                     
@@ -1507,9 +1507,9 @@ struct Advanced: View {
                                 ) {}
                                 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Using System Accent")
+                                    Text("正在使用系统强调色")
                                         .font(.body)
-                                    Text("Your macOS system accent color")
+                                    Text("即 macOS 系统设置中的强调色")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -1519,7 +1519,7 @@ struct Advanced: View {
                     } else {
                         // Custom color options
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("Color Presets")
+                            Text("预设颜色")
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.secondary)
@@ -1546,9 +1546,9 @@ struct Advanced: View {
                             // Custom color picker
                             HStack(spacing: 12) {
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text("Pick a Color")
+                                    Text("自选颜色")
                                         .font(.body)
-                                    Text("Choose any color")
+                                    Text("从调色盘中任选一种颜色")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                 }
@@ -1583,9 +1583,9 @@ struct Advanced: View {
                 }
                 .padding(.vertical, 4)
             } header: {
-                Text("Accent color")
+                Text("强调色")
             } footer: {
-                Text("Choose between your system accent color or customize it with your own selection.")
+                Text("跟随系统强调色，或自己选择一种颜色。")
                     .multilineTextAlignment(.trailing)
                     .foregroundStyle(.secondary)
                     .font(.caption)
@@ -1596,13 +1596,13 @@ struct Advanced: View {
             
             Section {
                 Defaults.Toggle(key: .enableShadow) {
-                    Text("Enable window shadow")
+                    Text("刘海展开时显示阴影")
                 }
                 Defaults.Toggle(key: .cornerRadiusScaling) {
-                    Text("Corner radius scaling")
+                    Text("展开时使用更大的圆角")
                 }
             } header: {
-                Text("Window Appearance")
+                Text("刘海外观")
             }
             
             Section {
@@ -1621,7 +1621,7 @@ struct Advanced: View {
                                         )
                                 )
 
-                            Text("Default")
+                            Text("默认")
                                 .fontWeight(.medium)
                                 .font(.caption)
                                 .foregroundStyle(icon == selectedIcon ? .white : .secondary)
@@ -1644,30 +1644,30 @@ struct Advanced: View {
                 .disabled(true)
             } header: {
                 HStack {
-                    Text("App icon")
-                    customBadge(text: "Coming soon")
+                    Text("应用图标")
+                    customBadge(text: "即将推出")
                 }
             }
             
             Section {
                 Defaults.Toggle(key: .extendHoverArea) {
-                    Text("Extend hover area")
+                    Text("扩大悬停感应区域")
                 }
                 Defaults.Toggle(key: .hideTitleBar) {
-                    Text("Hide title bar")
+                    Text("刘海比菜单栏矮时向下补齐，遮住菜单栏")
                 }
                 Defaults.Toggle(key: .showOnLockScreen) {
-                    Text("Show notch on lock screen")
+                    Text("锁屏时显示刘海")
                 }
                 Defaults.Toggle(key: .hideFromScreenRecording) {
-                    Text("Hide from screen recording")
+                    Text("录屏和截图时隐藏刘海")
                 }
             } header: {
-                Text("Window Behavior")
+                Text("刘海窗口")
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Advanced")
+        .navigationTitle("高级")
         .onAppear {
             loadCustomColor()
         }
@@ -1755,7 +1755,7 @@ struct AccentCircleButton: View {
             }
         }
         .buttonStyle(.plain)
-        .help(isSystemDefault ? "Use your macOS system accent color" : "")
+        .help(isSystemDefault ? "使用 macOS 系统强调色" : "")
     }
 }
 
@@ -1763,28 +1763,28 @@ struct Shortcuts: View {
     var body: some View {
         Form {
             Section {
-                KeyboardShortcuts.Recorder("Toggle Sneak Peek:", name: .toggleSneakPeek)
+                KeyboardShortcuts.Recorder("显示/隐藏歌曲信息：", name: .toggleSneakPeek)
             } header: {
-                Text("Media")
+                Text("媒体")
             } footer: {
                 Text(
-                    "Sneak Peek shows the media title and artist under the notch for a few seconds."
+                    "在刘海下方显示几秒当前歌曲的标题和歌手。"
                 )
                 .multilineTextAlignment(.trailing)
                 .foregroundStyle(.secondary)
                 .font(.caption)
             }
             Section {
-                KeyboardShortcuts.Recorder("Toggle Notch Open:", name: .toggleNotchOpen)
+                KeyboardShortcuts.Recorder("展开/收起刘海：", name: .toggleNotchOpen)
             }
         }
         .accentColor(.effectiveAccent)
-        .navigationTitle("Shortcuts")
+        .navigationTitle("快捷键")
     }
 }
 
 func proFeatureBadge() -> some View {
-    Text("Upgrade to Pro")
+    Text("升级到专业版")
         .foregroundStyle(Color(red: 0.545, green: 0.196, blue: 0.98))
         .font(.footnote.bold())
         .padding(.vertical, 3)
@@ -1795,7 +1795,7 @@ func proFeatureBadge() -> some View {
 }
 
 func comingSoonTag() -> some View {
-    Text("Coming soon")
+    Text("即将推出")
         .foregroundStyle(.secondary)
         .font(.footnote.bold())
         .padding(.vertical, 3)

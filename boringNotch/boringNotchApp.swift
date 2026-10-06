@@ -79,6 +79,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var isScreenLocked: Bool = false
     private var windowScreenDidChangeObserver: Any?
     private var dragDetectors: [String: DragDetector] = [:] // UUID -> DragDetector
+    private var activeDisplayTracker = ActiveDisplayTracker()
+    private var activeDisplayTimer: Timer?
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
@@ -98,6 +100,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         SubscriptionMonitor.shared.stop()
         MusicManager.shared.destroy()
         cleanupDragDetectors()
+        stopActiveDisplayTracking()
         cleanupWindows()
         XPCHelperClient.shared.stopMonitoringAccessibilityAuthorization()
     }
@@ -327,6 +330,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forName: Notification.Name.automaticallySwitchDisplayChanged, object: nil, queue: nil
         ) { [weak self] _ in
             Task { @MainActor in
+                self?.updateActiveDisplayTracking()
                 self?.adjustWindowPosition(changeAlpha: true)
                 self?.setupDragDetectors()
             }
@@ -338,6 +342,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             Task { @MainActor in
                 guard let self = self else { return }
                 self.cleanupWindows(shouldInvert: true)
+                self.updateActiveDisplayTracking()
                 self.adjustWindowPosition(changeAlpha: true)
                 self.setupDragDetectors()
             }
@@ -438,6 +443,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         setupDragDetectors()
+        updateActiveDisplayTracking()
 
         if coordinator.firstLaunch {
             DispatchQueue.main.async {
@@ -532,7 +538,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 preferred: coordinator.preferredScreenUUID,
                 available: screens.compactMap { $0.displayUUID },
                 main: NSScreen.main?.displayUUID,
-                automaticallySwitch: Defaults[.automaticallySwitchDisplay]
+                automaticallySwitch: Defaults[.automaticallySwitchDisplay],
+                active: activeDisplayTracker.active
             ), let selectedScreen = screens.first(where: { $0.displayUUID == uuid }) else {
                 window?.alphaValue = 0
                 return
@@ -554,6 +561,43 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
         }
+    }
+
+    // MARK: - Active display following
+
+    /// Polls the pointer while automatic switching is on; the notch moves to the display
+    /// the pointer settles on (see ActiveDisplayTracker), never while it is open or busy.
+    private func updateActiveDisplayTracking() {
+        guard Defaults[.automaticallySwitchDisplay], !Defaults[.showOnAllDisplays] else {
+            stopActiveDisplayTracking()
+            return
+        }
+        guard activeDisplayTimer == nil else { return }
+        activeDisplayTracker.reset(to: coordinator.selectedScreenUUID.isEmpty ? nil : coordinator.selectedScreenUUID)
+        let timer = Timer(timeInterval: 0.15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.sampleActiveDisplay() }
+        }
+        RunLoop.main.add(timer, forMode: .common)
+        activeDisplayTimer = timer
+    }
+
+    private func stopActiveDisplayTracking() {
+        activeDisplayTimer?.invalidate()
+        activeDisplayTimer = nil
+        activeDisplayTracker.reset(to: nil)
+    }
+
+    @MainActor
+    private func sampleActiveDisplay() {
+        let canSwitch = !isScreenLocked
+            && vm.notchState == .closed
+            && !vm.anyDropZoneTargeting
+            && !coordinator.sneakPeek.show
+            && !coordinator.expandingView.show
+        guard activeDisplayTracker.observe(NSScreen.screenWithMouse?.displayUUID, at: Date(), canSwitch: canSwitch) != nil,
+              activeDisplayTracker.active != coordinator.selectedScreenUUID else { return }
+        adjustWindowPosition(changeAlpha: true)
+        setupDragDetectors()
     }
 
     @objc func togglePopover(_ sender: Any?) {

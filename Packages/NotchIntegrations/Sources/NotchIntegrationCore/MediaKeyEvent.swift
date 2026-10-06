@@ -12,4 +12,12 @@ public struct MediaKeyEvent: Equatable, Sendable {
         keyCode = code
         isKeyDown = state == 0xA
     }
+
+    /// Display brightness keys (without ⌘, which means keyboard backlight) are only taken
+    /// when Islet can drive the display under the pointer; otherwise they go on to the
+    /// system or another brightness tool for that display.
+    public func shouldIntercept(commandHeld: Bool, pointerDisplayBrightnessControllable: Bool) -> Bool {
+        guard [2, 3].contains(keyCode), !commandHeld else { return true }
+        return pointerDisplayBrightnessControllable
+    }
 }

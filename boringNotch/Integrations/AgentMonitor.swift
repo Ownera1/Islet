@@ -244,7 +244,9 @@ final class AgentMonitor: ObservableObject {
             selectedAgent = agent
         }
         BoringViewCoordinator.shared.currentView = .agents
-        NotificationCenter.default.post(name: .notchAgentNeedsAttention, object: nil)
+        // A finished turn needs no answer, so the reveal collapses on its own (see ContentView).
+        NotificationCenter.default.post(name: .notchAgentNeedsAttention, object: nil,
+                                        userInfo: [AgentAttention.autoCollapseKey: true])
     }
     private func removeEndedSessions() {
         let cutoff = Date().addingTimeInterval(-24 * 3600)
@@ -258,3 +260,4 @@ final class AgentMonitor: ObservableObject {
     }
 }
 extension Notification.Name { static let notchAgentNeedsAttention = Notification.Name("notchAgentNeedsAttention") }
+enum AgentAttention { static let autoCollapseKey = "autoCollapse" }

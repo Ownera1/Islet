@@ -28,6 +28,7 @@ final class MediaKeyInterceptor: ObservableObject {
     @Published private(set) var isRunning = false
     private var generation = 0
     private var isStarting = false
+    private var supervisor: Task<Void, Never>?
     private let step: Float = 1.0 / 16.0
     private var audioPlayer: AVAudioPlayer?
     
@@ -47,12 +48,14 @@ final class MediaKeyInterceptor: ObservableObject {
 
     func start(promptIfNeeded: Bool = false) async {
         guard Defaults[.hudReplacement], !isRunning, !isStarting else { return }
+        supervise()
         isStarting = true
         let request = generation
         defer { if request == generation { isStarting = false } }
         errorMessage = nil
         if promptIfNeeded { _ = await ensureAccessibilityAuthorization(promptIfNeeded: true) }
-        guard request == generation, Defaults[.hudReplacement], !Task.isCancelled else { return }
+        // Only stop() supersedes a start; it bumps the generation and owns the state from then on.
+        guard request == generation, Defaults[.hudReplacement] else { return }
         let client = XPCHelperClient.shared
         client.onMediaKeyDown = { [weak self] code, modifiers in
             guard Defaults[.hudReplacement], self?.isRunning == true else { return }
@@ -67,7 +70,7 @@ final class MediaKeyInterceptor: ObservableObject {
             }
         }
         let result = await client.startMediaKeyEvents()
-        guard request == generation, Defaults[.hudReplacement], !Task.isCancelled else {
+        guard request == generation, Defaults[.hudReplacement] else {
             // A later enable owns the same tap; its queued start/stop order is preserved.
             if !Defaults[.hudReplacement] { client.stopMediaKeyEvents() }
             return
@@ -79,7 +82,26 @@ final class MediaKeyInterceptor: ObservableObject {
         }
     }
 
+    /// The helper can lose its tap without the app hearing about it (a failed callback,
+    /// a revoked grant, a helper restart). While the HUD is on, check every few seconds and
+    /// restart, so the switch never shows "on" over a dead tap.
+    private func supervise() {
+        guard supervisor == nil else { return }
+        supervisor = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                guard let self, !Task.isCancelled, Defaults[.hudReplacement], !self.isStarting else { continue }
+                if self.isRunning, await XPCHelperClient.shared.isMediaKeyTapActive() { continue }
+                guard !Task.isCancelled, Defaults[.hudReplacement], !self.isStarting else { continue }
+                self.isRunning = false
+                await self.start(promptIfNeeded: false)
+            }
+        }
+    }
+
     func stop() {
+        supervisor?.cancel()
+        supervisor = nil
         generation += 1
         isStarting = false
         isRunning = false

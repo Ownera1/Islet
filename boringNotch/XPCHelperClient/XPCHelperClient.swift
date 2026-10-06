@@ -169,6 +169,13 @@ final class XPCHelperClient: NSObject, NotchMediaKeyCallbacks {
         }
     }
 
+    @MainActor func isMediaKeyTapActive() async -> Bool {
+        guard let service = remoteService else { return false }
+        return (try? await service.withContinuation { service, continuation in
+            service.isMediaKeyTapActive { continuation.resume(returning: $0) }
+        }) ?? false
+    }
+
     @MainActor func stopMediaKeyEvents() {
         (connection?.remoteObjectProxy as? BoringNotchXPCHelperProtocol)?.stopMediaKeyEvents()
     }

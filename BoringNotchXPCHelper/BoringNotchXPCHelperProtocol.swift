@@ -18,6 +18,7 @@ import Foundation
 
     func startMediaKeyEvents(with reply: @escaping (Bool, String?) -> Void)
     func stopMediaKeyEvents()
+    func isMediaKeyTapActive(with reply: @escaping (Bool) -> Void)
 
     func isAccessibilityAuthorized(with reply: @escaping (Bool) -> Void)
     func requestAccessibilityAuthorization()

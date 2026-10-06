@@ -49,6 +49,10 @@ enum MediaControllerType: String, CaseIterable, Identifiable, Defaults.Serializa
     case youtubeMusic = "YouTube Music"
     
     var id: String { self.rawValue }
+
+    var displayName: String {
+        self == .nowPlaying ? "系统正在播放（Now Playing）" : rawValue
+    }
 }
 
 // Sneak peek styles for selection in settings
@@ -57,6 +61,13 @@ enum SneakPeekStyle: String, CaseIterable, Identifiable, Defaults.Serializable {
     case inline = "Inline"
     
     var id: String { self.rawValue }
+
+    var displayName: String {
+        switch self {
+        case .standard: "在刘海下方展开"
+        case .inline: "在刘海两侧显示"
+        }
+    }
 }
 
 // Action to perform when Option (⌥) is held while pressing media keys
@@ -66,6 +77,14 @@ enum OptionKeyAction: String, CaseIterable, Identifiable, Defaults.Serializable 
     case none = "No Action"
 
     var id: String { self.rawValue }
+
+    var displayName: String {
+        switch self {
+        case .openSettings: "打开对应的系统设置"
+        case .showHUD: "只显示当前数值，不调节"
+        case .none: "忽略按键"
+        }
+    }
 }
 
 extension Defaults.Keys {

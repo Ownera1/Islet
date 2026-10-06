@@ -10,9 +10,13 @@ import Foundation
     var deferred = false
     var pending: [CheckedContinuation<(Bool, String?), Never>] = []
     var stopCount = 0
+    var startCount = 0
+    var tapActive = true
     func requestAccessibilityAuthorization() {}
     func ensureAccessibilityAuthorization(promptIfNeeded: Bool) async -> Bool { result.0 }
+    func isMediaKeyTapActive() async -> Bool { tapActive }
     func startMediaKeyEvents() async -> (Bool, String?) {
+        startCount += 1
         if deferred { return await withCheckedContinuation { pending.append($0) } }
         return result
     }

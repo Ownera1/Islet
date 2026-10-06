@@ -68,4 +68,12 @@ enum SliderColorEnum: String, CaseIterable, Defaults.Serializable {
     case white = "White"
     case albumArt = "Match album art"
     case accent = "Accent color"
+
+    var displayName: String {
+        switch self {
+        case .white: "白色"
+        case .albumArt: "跟随专辑封面"
+        case .accent: "强调色"
+        }
+    }
 }

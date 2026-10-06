@@ -415,10 +415,22 @@ struct ContentView: View {
                 .opacity(gestureProgress != 0 ? 1.0 - min(abs(gestureProgress) * 0.1, 0.3) : 1.0)
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .notchAgentNeedsAttention)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .notchAgentNeedsAttention)) { notification in
             hoverTask?.cancel()
             coordinator.currentView = .agents
             vm.open()
+            let delay = Defaults[.agentCompletionCollapseDelay]
+            guard notification.userInfo?[AgentAttention.autoCollapseKey] as? Bool == true, delay > 0 else { return }
+            // Stored in hoverTask so hovering in cancels the countdown; leaving closes as usual.
+            hoverTask = Task {
+                try? await Task.sleep(for: .seconds(delay))
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    if self.vm.notchState == .open && !self.isHovering && !self.vm.isBatteryPopoverActive && !SharingStateManager.shared.preventNotchClose && AgentMonitor.shared.requests.isEmpty {
+                        self.vm.close()
+                    }
+                }
+            }
         }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
     }

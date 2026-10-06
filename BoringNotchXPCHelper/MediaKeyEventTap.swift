@@ -16,6 +16,8 @@ final class MediaKeyEventTap {
         return true
     }
 
+    var isActive: Bool { tap.map { CGEvent.tapIsEnabled(tap: $0) } ?? false }
+
     func start() -> Bool {
         if tap != nil { return true }
         guard let port = Self.createTap(callback: { _, type, event, context in
@@ -27,6 +29,10 @@ final class MediaKeyEventTap {
             }
             guard type.rawValue == 14, let native = NSEvent(cgEvent: event),
                   let key = MediaKeyEvent(data1: native.data1, subtype: Int(native.subtype.rawValue)) else {
+                return Unmanaged.passUnretained(event)
+            }
+            guard key.shouldIntercept(commandHeld: native.modifierFlags.contains(.command),
+                                      pointerDisplayBrightnessControllable: ScreenBrightness.pointerDisplayIsControllable) else {
                 return Unmanaged.passUnretained(event)
             }
             if key.isKeyDown { owner.onKeyDown?(key.keyCode, native.modifierFlags.rawValue) }
