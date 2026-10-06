@@ -33,7 +33,7 @@ Gemini CLI 的旧数据解析保留兼容，但不进入当前额度页面或后
 
 详细说明和实测步骤见 [docs/claude-desktop-support.md](docs/claude-desktop-support.md)。
 
-- **Code 标签页**：通过与命令行版相同的 Hook 显示，卡片标注「Claude 桌面版」，点击回到桌面版。审批由桌面版自己的卡片处理：刘海只显示等待状态并提示到桌面版处理，不提供批准或拒绝按钮。
+- **Code 标签页**：通过与命令行版相同的 Hook 显示，卡片标注「Claude 桌面版」，点击回到桌面版。审批和终端会话一样在刘海中允许或拒绝；桌面版同时显示自己的卡片，在那里处理后，刘海的审批卡在该工具运行结束时自动移除。
 - **Cowork**：Cowork 在虚拟机里运行，不触发 Hook。Helper 每 2 秒只读扫描 `~/Library/Application Support/Claude/local-agent-mode-sessions`，显示运行中、等待审批 / 回答（仅展示）和完成；点击打开桌面版中的该任务。归档、隐藏（Dispatch、radar 等）和 10 分钟内没有活动的旧会话不显示。同一会话已有 Hook 卡片时以 Hook 卡片为准。
 - **额度**：只来自命令行版 Claude Code 的登录。Islet 不解密桌面版的登录凭据，不读取 "Claude Safe Storage"，不刷新 token，也不为取额度调用模型。只用桌面版时卡片会提示在终端运行一次 `claude` 登录。
 - **调试**：bridge 只在设置 `BORINGNOTCH_DEBUG=1` 时写 `/tmp/notch-agent-bridge.log`（权限 0600），不记录 Hook 内容。
