@@ -28,6 +28,34 @@ public enum ClaudeDesktop {
         return CoworkSessionPolicy.deepLinkURL(sessionId: id)
     }
 
+    // MARK: Code tab (hooks)
+
+    /// Who answers a `PermissionRequest` hook.
+    public enum PermissionHandling: Equatable, Sendable {
+        /// Held until the user decides in the notch (terminal sessions).
+        case island
+        /// Answered `{}` at once, so the host shows its own card; the notch
+        /// only mirrors the wait and offers to jump there.
+        case displayOnly
+    }
+
+    /// Code-tab sessions run the Claude Code engine with Claude Desktop's own
+    /// permission UI. Holding the hook would leave a second, competing card
+    /// in the notch (or block the app on a card it cannot see), while `{}`
+    /// hands the decision straight back to Claude Desktop, which then asks in
+    /// its own window. Switch to `.island` only if the step-0 measurement in
+    /// docs/claude-desktop-support.md shows Claude Desktop waits for the hook
+    /// without showing a card of its own.
+    public static let codeTabPermissionHandling: PermissionHandling = .displayOnly
+
+    /// `termBundle` is the hook's `_term_bundle` (the host app's
+    /// `__CFBundleIdentifier`, inherited by hook subprocesses).
+    public static func permissionHandling(termBundle: String?) -> PermissionHandling {
+        termBundle == bundleId ? codeTabPermissionHandling : .island
+    }
+
+    // MARK: Cowork (session store)
+
     public enum CoworkOutcome: Equatable, Sendable {
         /// The card was created or refreshed. `turnEnded` when a turn just
         /// finished normally and the conversation should be revealed.

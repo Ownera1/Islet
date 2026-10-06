@@ -106,6 +106,26 @@ import NotchIntegrationCore
             try transcript(["sessionID": "transcript", "turnStatus": "idle", "hasActivity": true])
             precondition(notifications == endedNotices + expected, "Transcript-only turns must also re-arm")
         }
+        let desktop: [String: Any] = ["_term_bundle": "com.anthropic.claudefordesktop", "cwd": "/Users/test/demo"]
+        let desktopBefore = notifications
+        try event(.claude, "SessionStart", id: "desktop", extra: desktop)
+        try event(.claude, "UserPromptSubmit", id: "desktop", extra: desktop.merging(["prompt": "hi"]) { $1 })
+        precondition(monitor.sessions["desktop"]?.termBundleId == "com.anthropic.claudefordesktop"
+            && monitor.sessions["desktop"]?.status == .processing, "Claude Desktop Code-tab hooks create a session")
+        try event(.claude, "PermissionRequest", id: "desktop", extra: desktop.merging(["tool_name": "Bash", "tool_input": ["command": "ls"]]) { $1 })
+        precondition(monitor.requests.isEmpty && monitor.sessions["desktop"]?.status == .waitingApproval
+            && notifications == desktopBefore + 1 && monitor.selectedSessionID == "desktop",
+            "Claude Desktop answers its own permission prompt; the island only mirrors the wait")
+        try event(.claude, "PostToolUse", id: "desktop", extra: desktop.merging(["tool_name": "Bash"]) { $1 })
+        precondition(monitor.sessions["desktop"]?.status == .processing, "The mirrored wait ends when the tool finishes")
+        try event(.claude, "Stop", id: "desktop", extra: desktop)
+        precondition(notifications == desktopBefore + 2, "A Code-tab turn completion expands")
+        try event(.claude, "PermissionRequest", id: "terminal", extra: ["tool_name": "Bash"])
+        precondition(monitor.requests.count == 1, "Terminal sessions keep the island approval flow")
+        try event(.claude, "SessionEnd", id: "terminal")
+        try event(.claude, "SessionEnd", id: "desktop")
+        precondition(monitor.requests.isEmpty)
+
         func cowork(_ update: CoworkSessionUpdate) throws {
             IntegrationServiceClient.shared.onCowork?(try JSONEncoder().encode(update))
         }
@@ -133,6 +153,6 @@ import NotchIntegrationCore
         try cowork(.removal(sessionId: "local_gone"))
         precondition(monitor.sessions["local_gone"] == nil, "An archived Cowork task loses its card")
 
-        print("Passed Agent completion selection, five providers, successive turns, deduplication, transcript replay, interruption, setting, approval priority and Cowork checks.")
+        print("Passed Agent completion selection, five providers, successive turns, deduplication, transcript replay, interruption, setting, approval priority, Claude Desktop Code-tab and Cowork checks.")
     }
 }

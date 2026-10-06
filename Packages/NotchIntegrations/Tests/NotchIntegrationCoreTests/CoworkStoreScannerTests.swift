@@ -210,6 +210,20 @@ final class CoworkStoreScannerTests: XCTestCase {
         XCTAssertEqual(ClaudeDesktop.apply(CoworkSessionUpdate(sessionId: "not-cowork"), to: &sessions), .ignored)
     }
 
+    func testCodeTabPermissionsAreAnsweredInClaudeDesktop() {
+        XCTAssertEqual(ClaudeDesktop.permissionHandling(termBundle: "com.anthropic.claudefordesktop"),
+                       ClaudeDesktop.codeTabPermissionHandling)
+        XCTAssertEqual(ClaudeDesktop.codeTabPermissionHandling, .displayOnly)
+        for terminal in [nil, "com.apple.Terminal", "com.googlecode.iterm2"] as [String?] {
+            XCTAssertEqual(ClaudeDesktop.permissionHandling(termBundle: terminal), .island)
+        }
+        var codeTab = SessionSnapshot()
+        codeTab.termBundleId = "com.anthropic.claudefordesktop"
+        XCTAssertEqual(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: codeTab), "Claude 桌面版")
+        XCTAssertNil(ClaudeDesktop.deepLink(id: "8c6f-session", snapshot: codeTab), "Code-tab sessions activate the app instead")
+        XCTAssertNil(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: SessionSnapshot()))
+    }
+
     func testUpdatesRoundTripAsJSON() throws {
         let update = CoworkSessionUpdate(sessionId: "local_j", title: "T", phase: .waitingQuestion,
                                          lastActivity: Date(timeIntervalSince1970: 1_800_000_000), turnEnded: true)

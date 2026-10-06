@@ -117,6 +117,14 @@ final class AgentMonitor: ObservableObject {
             for request in requests.filter({ $0.sessionID == sessionID }) { request.respond(Data("{}".utf8)) }
             requests.removeAll { $0.sessionID == sessionID }
         }
+        // A display-only wait (answered in the host app, e.g. Claude Desktop's own
+        // card) ends when the tool it guarded finishes; reduceEvent keeps waiting
+        // states on its own, which only suits requests the island holds.
+        if event.agentId == nil, name == "PostToolUse" || name == "PostToolUseFailure",
+           let status = sessions[sessionID]?.status, status == .waitingApproval || status == .waitingQuestion,
+           !requests.contains(where: { $0.sessionID == sessionID }) {
+            sessions[sessionID]?.status = .processing
+        }
         let effects = reduceEvent(sessions: &sessions, event: event, maxHistory: 30)
         for effect in effects {
             if case .removeSession(let sid) = effect { dismiss(sid) }
@@ -124,7 +132,22 @@ final class AgentMonitor: ObservableObject {
                 revealCompletedSession(sid)
             }
         }
-        if agent.canApprove && name == "PermissionRequest" {
+        if agent.canApprove && name == "PermissionRequest",
+           ClaudeDesktop.permissionHandling(termBundle: event.rawJSON["_term_bundle"] as? String) == .displayOnly {
+            // Claude Desktop asks in its own window: hand the decision back at once
+            // and only mirror the wait (see ClaudeDesktop.codeTabPermissionHandling).
+            respond(Data("{}".utf8))
+            let isQuestion = !(event.toolInput?["questions"] as? [[String: Any]] ?? []).isEmpty
+            sessions[sessionID]?.status = isQuestion ? .waitingQuestion : .waitingApproval
+            if let tool = event.toolName { sessions[sessionID]?.currentTool = tool }
+            if let detail = event.toolDescription { sessions[sessionID]?.toolDescription = detail }
+            if requests.isEmpty {
+                selectedSessionID = sessionID
+                selectedAgent = agent
+            }
+            BoringViewCoordinator.shared.currentView = .agents
+            NotificationCenter.default.post(name: .notchAgentNeedsAttention, object: nil)
+        } else if agent.canApprove && name == "PermissionRequest" {
             let rawQuestions = event.toolInput?["questions"] as? [[String: Any]] ?? []
             var used = Set<String>()
             let questions = rawQuestions.map { raw -> AgentQuestion in

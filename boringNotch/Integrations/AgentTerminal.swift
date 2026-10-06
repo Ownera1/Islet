@@ -6,6 +6,7 @@ import NotchIntegrationCore
 enum AgentTerminal {
     static func open(_ session: SessionSnapshot, id: String) {
         if let url = ClaudeDesktop.deepLink(id: id, snapshot: session) { NSWorkspace.shared.open(url); return }
+        if ClaudeDesktop.isDesktopSession(session) { launch(bundle: ClaudeDesktop.bundleId, fallbackName: "Claude"); return }
         if session.source == "codex", session.termBundleId == "com.openai.codex" {
             let thread = session.providerSessionId ?? id.replacingOccurrences(of: "codexapp:", with: "")
             if let url = URL(string: "codex://threads/" + thread.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!) { NSWorkspace.shared.open(url) }
