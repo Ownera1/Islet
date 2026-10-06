@@ -224,6 +224,13 @@ final class CoworkStoreScannerTests: XCTestCase {
         XCTAssertNil(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: SessionSnapshot()))
     }
 
+    func testMissingLoginMessageNamesClaudeDesktopWhenItIsInstalled() throws {
+        let home = (root as NSString).deletingLastPathComponent + "/home"
+        XCTAssertEqual(ClaudeDesktop.missingLoginMessage(home: home), "请先登录 Claude Code。")
+        try FileManager.default.createDirectory(atPath: home + "/Library/Application Support/Claude", withIntermediateDirectories: true)
+        XCTAssertEqual(ClaudeDesktop.missingLoginMessage(home: home), ClaudeDesktop.noReadableQuotaMessage)
+    }
+
     func testUpdatesRoundTripAsJSON() throws {
         let update = CoworkSessionUpdate(sessionId: "local_j", title: "T", phase: .waitingQuestion,
                                          lastActivity: Date(timeIntervalSince1970: 1_800_000_000), turnEnded: true)

@@ -28,6 +28,21 @@ public enum ClaudeDesktop {
         return CoworkSessionPolicy.deepLinkURL(sessionId: id)
     }
 
+    // MARK: Subscription
+
+    /// Claude Desktop's login is encrypted with its own "Claude Safe Storage"
+    /// key and is never read here, and refreshing tokens on its behalf would
+    /// log the CLI out. So without a Claude Code login there is no quota.
+    public static let noReadableQuotaMessage = "Claude 桌面版不提供可读取的额度。在终端运行一次 `claude` 登录后，Islet 可显示实时额度。"
+
+    /// Text for "no Claude Code login": points desktop-only users at the CLI.
+    public static func missingLoginMessage(home: String, fileManager: FileManager = .default) -> String {
+        var isDirectory: ObjCBool = false
+        let hasDesktop = fileManager.fileExists(atPath: CoworkPaths.claudeSupportDirectory(home: home), isDirectory: &isDirectory)
+            && isDirectory.boolValue
+        return hasDesktop ? noReadableQuotaMessage : "请先登录 Claude Code。"
+    }
+
     // MARK: Code tab (hooks)
 
     /// Who answers a `PermissionRequest` hook.

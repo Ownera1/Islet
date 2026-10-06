@@ -115,7 +115,7 @@ extension BoringNotchXPCHelper {
             } catch {
                 let message: String
                 switch error {
-                case ClaudeQuotaClientError.noCredential: message = "请先登录 Claude Code。"
+                case ClaudeQuotaClientError.noCredential: message = ClaudeDesktop.missingLoginMessage(home: HomePaths.userHome)
                 case ClaudeQuotaClientError.unauthorized: message = "Claude 登录已过期，请打开 Claude Code 更新登录。"
                 case ClaudeQuotaClientError.rateLimited: message = "请求过于频繁，稍后自动重试。"
                 default: message = error.localizedDescription
