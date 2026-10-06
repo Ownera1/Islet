@@ -54,14 +54,23 @@ public enum ClaudeDesktop {
         case displayOnly
     }
 
-    /// Code-tab sessions run the Claude Code engine with Claude Desktop's own
-    /// permission UI. Holding the hook would leave a second, competing card
-    /// in the notch (or block the app on a card it cannot see), while `{}`
-    /// hands the decision straight back to Claude Desktop, which then asks in
-    /// its own window. Switch to `.island` only if the step-0 measurement in
-    /// docs/claude-desktop-support.md shows Claude Desktop waits for the hook
-    /// without showing a card of its own.
-    public static let codeTabPermissionHandling: PermissionHandling = .displayOnly
+    /// Code-tab sessions are answered in the notch like terminal sessions.
+    /// Measured (docs/claude-desktop-support.md, step 0.2): Claude Desktop
+    /// applies the hook's allow / deny, but also shows its own card while the
+    /// hook is held. A decision made there does not end the hook, so the
+    /// island drops its copy when the tool finishes (`isAnsweredInApp`).
+    /// `.displayOnly` answers `{}` at once and leaves the decision to the app.
+    public static let codeTabPermissionHandling: PermissionHandling = .island
+
+    /// Whether a finished tool (`PostToolUse` / `PostToolUseFailure`) is the
+    /// one a held Code-tab request guards, i.e. it was decided in Claude
+    /// Desktop's own card. Same tool and same input; a parallel tool that
+    /// finishes meanwhile leaves the request alone.
+    public static func isAnsweredInApp(requestTool: String, requestInput: [String: Any],
+                                       finishedTool: String?, finishedInput: [String: Any]?) -> Bool {
+        guard let finishedTool, finishedTool == requestTool else { return false }
+        return NSDictionary(dictionary: requestInput).isEqual(to: finishedInput ?? [:])
+    }
 
     /// `termBundle` is the hook's `_term_bundle` (the host app's
     /// `__CFBundleIdentifier`, inherited by hook subprocesses).

@@ -112,14 +112,22 @@ import NotchIntegrationCore
         try event(.claude, "UserPromptSubmit", id: "desktop", extra: desktop.merging(["prompt": "hi"]) { $1 })
         precondition(monitor.sessions["desktop"]?.termBundleId == "com.anthropic.claudefordesktop"
             && monitor.sessions["desktop"]?.status == .processing, "Claude Desktop Code-tab hooks create a session")
-        try event(.claude, "PermissionRequest", id: "desktop", extra: desktop.merging(["tool_name": "Bash", "tool_input": ["command": "ls"]]) { $1 })
-        precondition(monitor.requests.isEmpty && monitor.sessions["desktop"]?.status == .waitingApproval
+        let touch: [String: Any] = ["tool_name": "Bash", "tool_input": ["command": "touch /tmp/x"]]
+        try event(.claude, "PermissionRequest", id: "desktop", extra: desktop.merging(touch) { $1 })
+        precondition(monitor.requests.count == 1 && monitor.sessions["desktop"]?.status == .waitingApproval
             && notifications == desktopBefore + 1 && monitor.selectedSessionID == "desktop",
-            "Claude Desktop answers its own permission prompt; the island only mirrors the wait")
-        try event(.claude, "PostToolUse", id: "desktop", extra: desktop.merging(["tool_name": "Bash"]) { $1 })
-        precondition(monitor.sessions["desktop"]?.status == .processing, "The mirrored wait ends when the tool finishes")
+            "Claude Desktop Code-tab permissions are answered in the notch")
+        try event(.claude, "PostToolUse", id: "desktop", extra: desktop.merging(["tool_name": "Read", "tool_input": ["file_path": "/tmp/y"]]) { $1 })
+        precondition(monitor.requests.count == 1, "A parallel tool finishing keeps the request")
+        try event(.claude, "PostToolUse", id: "desktop", extra: desktop.merging(touch) { $1 })
+        precondition(monitor.requests.isEmpty && monitor.sessions["desktop"]?.status == .processing,
+            "Approved in Claude Desktop's own card: the guarded tool finishing drops the stale request")
+        try event(.claude, "PermissionRequest", id: "desktop", extra: desktop.merging(touch) { $1 })
+        try event(.claude, "PostToolUseFailure", id: "desktop", extra: desktop.merging(touch) { $1 })
+        precondition(monitor.requests.isEmpty, "A failed run of the guarded tool also drops the request")
+        let desktopTurnBefore = notifications
         try event(.claude, "Stop", id: "desktop", extra: desktop)
-        precondition(notifications == desktopBefore + 2, "A Code-tab turn completion expands")
+        precondition(notifications == desktopTurnBefore + 1, "A Code-tab turn completion expands")
         try event(.claude, "PermissionRequest", id: "terminal", extra: ["tool_name": "Bash"])
         precondition(monitor.requests.count == 1, "Terminal sessions keep the island approval flow")
         try event(.claude, "SessionEnd", id: "terminal")

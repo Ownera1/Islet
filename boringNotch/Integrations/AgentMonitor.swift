@@ -117,6 +117,21 @@ final class AgentMonitor: ObservableObject {
             for request in requests.filter({ $0.sessionID == sessionID }) { request.respond(Data("{}".utf8)) }
             requests.removeAll { $0.sessionID == sessionID }
         }
+        // Claude Desktop shows its own card next to a held Code-tab request, and
+        // answering there leaves the hook waiting until Stop. The guarded tool
+        // finishing means it was decided in the app: drop the island's copy.
+        if name == "PostToolUse" || name == "PostToolUseFailure",
+           event.rawJSON["_term_bundle"] as? String == ClaudeDesktop.bundleId {
+            let answered = requests.filter {
+                $0.sessionID == sessionID && ClaudeDesktop.isAnsweredInApp(requestTool: $0.tool, requestInput: $0.originalInput,
+                                                                          finishedTool: event.toolName, finishedInput: event.toolInput)
+            }
+            for request in answered { request.respond(Data("{}".utf8)) }
+            requests.removeAll { request in answered.contains { $0.id == request.id } }
+            if !answered.isEmpty, !requests.contains(where: { $0.sessionID == sessionID }) {
+                sessions[sessionID]?.status = .processing
+            }
+        }
         // A display-only wait (answered in the host app, e.g. Claude Desktop's own
         // card) ends when the tool it guarded finishes; reduceEvent keeps waiting
         // states on its own, which only suits requests the island holds.

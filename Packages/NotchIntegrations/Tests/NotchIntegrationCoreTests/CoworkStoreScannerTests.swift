@@ -210,10 +210,10 @@ final class CoworkStoreScannerTests: XCTestCase {
         XCTAssertEqual(ClaudeDesktop.apply(CoworkSessionUpdate(sessionId: "not-cowork"), to: &sessions), .ignored)
     }
 
-    func testCodeTabPermissionsAreAnsweredInClaudeDesktop() {
+    func testCodeTabPermissionsAreAnsweredInTheNotch() {
         XCTAssertEqual(ClaudeDesktop.permissionHandling(termBundle: "com.anthropic.claudefordesktop"),
                        ClaudeDesktop.codeTabPermissionHandling)
-        XCTAssertEqual(ClaudeDesktop.codeTabPermissionHandling, .displayOnly)
+        XCTAssertEqual(ClaudeDesktop.codeTabPermissionHandling, .island)
         for terminal in [nil, "com.apple.Terminal", "com.googlecode.iterm2"] as [String?] {
             XCTAssertEqual(ClaudeDesktop.permissionHandling(termBundle: terminal), .island)
         }
@@ -222,6 +222,19 @@ final class CoworkStoreScannerTests: XCTestCase {
         XCTAssertEqual(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: codeTab), "Claude 桌面版")
         XCTAssertNil(ClaudeDesktop.deepLink(id: "8c6f-session", snapshot: codeTab), "Code-tab sessions activate the app instead")
         XCTAssertNil(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: SessionSnapshot()))
+    }
+
+    func testAFinishedToolEndsTheRequestItGuards() {
+        let input: [String: Any] = ["command": "touch /tmp/x", "description": "Create x"]
+        XCTAssertTrue(ClaudeDesktop.isAnsweredInApp(requestTool: "Bash", requestInput: input,
+                                                    finishedTool: "Bash", finishedInput: input))
+        XCTAssertFalse(ClaudeDesktop.isAnsweredInApp(requestTool: "Bash", requestInput: input,
+                                                     finishedTool: "Bash", finishedInput: ["command": "ls"]),
+                       "Another command of the same tool finishing must not drop the request")
+        XCTAssertFalse(ClaudeDesktop.isAnsweredInApp(requestTool: "Bash", requestInput: input,
+                                                     finishedTool: "Read", finishedInput: input))
+        XCTAssertFalse(ClaudeDesktop.isAnsweredInApp(requestTool: "Bash", requestInput: input,
+                                                     finishedTool: nil, finishedInput: input))
     }
 
     func testMissingLoginMessageNamesClaudeDesktopWhenItIsInstalled() throws {
