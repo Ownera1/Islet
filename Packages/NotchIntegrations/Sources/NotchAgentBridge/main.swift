@@ -606,6 +606,21 @@ if let orcaWorktree = env["ORCA_WORKTREE_ID"], !orcaWorktree.isEmpty {
 // Inject cwd if not already present. Gemini CLI / Google Antigravity hooks do not
 // include a `cwd` field, so CodeIsland cannot resolve the project name and falls back
 // to "Session". Populating it here lets the approval card show the actual folder name.
+// TEMPORARY (Claude Desktop step-0 probe, docs/claude-desktop-support.md):
+// which routing fields a hook from the desktop Code tab carries. Values are
+// only printed for tags; cwd is reduced to set/empty and the transcript to
+// the store it lives in. Revert this block once the measurement is recorded.
+if debugLogging {
+    func presence(_ key: String) -> String { nonEmptyString(json[key]) == nil ? "empty" : "set" }
+    let transcriptStore: String
+    if let path = nonEmptyString(json["transcript_path"]) {
+        if path.contains("/local-agent-mode-sessions/") { transcriptStore = "claude-desktop-sessions" }
+        else if path.contains("/.claude/projects/") { transcriptStore = "claude-projects" }
+        else { transcriptStore = "other" }
+    } else { transcriptStore = "empty" }
+    debugLog("probe _source=\(nonEmptyString(json["_source"]) ?? "empty") _term_bundle=\(nonEmptyString(json["_term_bundle"]) ?? "empty") hook_event_name=\(nonEmptyString(json["hook_event_name"]) ?? "empty") cwd=\(presence("cwd")) transcript_path=\(presence("transcript_path")) transcript_store=\(transcriptStore)")
+}
+
 if json["cwd"] == nil {
     json["cwd"] = FileManager.default.currentDirectoryPath
 }
@@ -646,7 +661,14 @@ if isBlocking {
 
 // Wait for server response — critical: without this, close() races ahead
 // of NWListener's main-thread handler and the event is lost
+// TEMPORARY (step-0 probe): a "wait start" with no matching "wait end" means
+// the host killed the hook while the island still held the request.
+let waitStarted = Date()
+if isBlocking { debugLog("probe blocking wait start event=\(normalizedEventName)") }
 let response = recvAll(sock)
+if isBlocking {
+    debugLog("probe blocking wait end event=\(normalizedEventName) seconds=\(Int(Date().timeIntervalSince(waitStarted))) responseBytes=\(response.count)")
+}
 
 // Blocking events: forward response to stdout
 if isBlocking && !response.isEmpty {
