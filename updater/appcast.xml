@@ -6,6 +6,27 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.11</title>
+            <pubDate>Wed, 07 Oct 2026 09:51:37 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>0.1.11</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.11
+
+修复 Codex 桌面版会话跳转到终端的问题。
+
+- 在 Agent 详情页点击 Codex 桌面版会话的跳转按钮，现在会打开 Codex 桌面版中对应的对话，而不是终端。新版 Codex 桌面版（ChatGPT.app）不再向 hook 传递应用标识，导致桌面会话被误认为命令行会话。
+- Codex 的 SessionEnd 和 Interrupt hook 超时改为官方上限 3 秒（原为 5 秒）。
+- 修正 ZCode 桌面版的应用标识，跳转时直接按标识打开 ZCode。
+
+更新后请到「设置 → Agent 与订阅」中关闭再重新开启 Codex 集成，以安装新的桥接程序和 hook 配置；更新前已存在的 Codex 桌面会话卡片不会自动纠正，新会话即可正常跳转。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.11/Islet-0.1.11-build13-universal.zip" length="17989446" type="application/octet-stream" sparkle:edSignature="SA6blGhZDqvUnAY6EqPAWHp4H7bEbFsyVO9xNclikJmRU4a2ecLwbw+z+h0QEWDDoyBKNV1WmQX0BwbX1U4nCA=="/>
+        </item>
+        <item>
             <title>0.1.10</title>
             <pubDate>Tue, 06 Oct 2026 09:52:39 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
@@ -87,27 +108,6 @@
 提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
 ]]></description>
             <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-universal.zip" length="17592525" type="application/octet-stream" sparkle:edSignature="SmBZqulmzSWITv9l2U3wLnfts1YYXA1xKXQAk7A5AcQak3zdRJzANAHVCslteyUwDIPib861ISkd1p6ox6b2Bw=="/>
-        </item>
-        <item>
-            <title>0.1.7</title>
-            <pubDate>Mon, 05 Oct 2026 05:37:49 +0000</pubDate>
-            <link>https://github.com/Ownera1/Islet/releases</link>
-            <sparkle:version>8</sparkle:version>
-            <sparkle:shortVersionString>0.1.7</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.7
-
-本次最终更新包含显示器、HUD、Agent 页与收起态歌词修改。
-
-- 修复自动切换显示器开关仅改变透明度的问题：首选屏断开时回退，重连后恢复；屏幕布局变化会重新定位。
-- HUD 权限检查与媒体键拦截统一由 Helper 处理，并启用 NSRunLoop 来分发媒体键事件。开启失败和连接中断显示明确提示，保留音量、亮度、背光与修饰键操作。
-- Agent 页新增全部总览、状态分组下拉菜单和持久化的单行／双行样式。框架名称完整显示，保留多会话、任务、审批和回答。
-- 收起态歌词新增仅外接屏／所有显示器选项，支持当前句高亮、长句滚动、间奏、暂停和减少动态效果。
-- 主应用与 Helper 均移除调试权限；发布校验同时检查权限与 Helper 运行配置。
-
-推荐安装此版本。提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新继续使用原有 Sparkle Ed25519 公钥。应用沿用 ad-hoc 签名，未经过 Apple 公证。
-]]></description>
-            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.7/Islet-0.1.7-universal.zip" length="17590287" type="application/octet-stream" sparkle:edSignature="cD+7+v1TVjgw2iyqXS3sImiLrp3bgCzQFbIXtKoKxLirQRyXjnMYk4rEZcfj9JN6SOEI0mvY8+A4Kj37E7z/Cw=="/>
         </item>
     </channel>
 </rss>
