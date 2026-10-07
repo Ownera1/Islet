@@ -27,6 +27,23 @@ final class CollapsedLyricsTests: XCTestCase {
         XCTAssertNil(frame(40).line, "The last line ends at the track duration")
     }
 
+    func testStripStaysWhileSungAndStepsAsideForPointer() {
+        let document = LyricsDocument(lines: Lyrics.parse("[00:10]first\n[00:20]second\n[00:30]\n[00:40]third"))
+        var strip = CollapsedLyricStrip()
+        func show(_ time: Double, near: Bool = false) -> Bool {
+            strip.update(CollapsedLyricFrame(document: document, elapsed: time, duration: 50), pointerNear: near, now: time)
+        }
+        XCTAssertFalse(show(5), "Nothing before the first line")
+        XCTAssertTrue(show(10))
+        XCTAssertTrue(show(29.9), "Stays for every sung line")
+        XCTAssertTrue(show(31), "Bridges a short gap")
+        XCTAssertFalse(show(33), "Retracts for an interlude")
+        XCTAssertTrue(show(40))
+        XCTAssertFalse(show(41, near: true), "Steps aside for the pointer")
+        XCTAssertFalse(show(41.3), "Waits before returning")
+        XCTAssertTrue(show(41.7))
+    }
+
     func testInterludesAndContentAvailability() {
         let document = LyricsDocument(lines: [
             LyricLine(time: 1, text: "sing", duration: 2),

@@ -168,14 +168,13 @@ struct CollapsedLyricsSettingsPreview: View {
                     Image(systemName: "waveform").foregroundStyle(.gray)
                 }
                 .padding(.horizontal, 14).frame(height: 36)
-                .frame(width: placement == .hidden ? 230 : 360)
-                .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14))
                 if placement == .belowNotch {
-                    Text("这里显示正在演唱的这一句歌词").font(.system(size: 12, weight: .medium))
-                        .frame(width: 300, height: 24)
-                        .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 12, bottomTrailingRadius: 12))
+                    Text("演唱时常驻，指针靠近自动让开").font(.system(size: 12, weight: .medium))
+                        .frame(height: 22).padding(.bottom, 6)
                 }
             }
+            .frame(width: placement == .inline ? 360 : 230)
+            .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 14, bottomTrailingRadius: 14))
             .foregroundStyle(.white)
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .top)
         }

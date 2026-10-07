@@ -25,6 +25,26 @@ public func collapsedLyricsPlacement(mode: CollapsedLyricsMode, hasHardwareNotch
     }
 }
 
+/// Keeps the lower strip out of a hardware notch while lines are sung, bridging the short
+/// gaps between them, and steps it aside while the pointer is near so the app beneath stays reachable.
+public struct CollapsedLyricStrip: Equatable, Sendable {
+    /// Gaps shorter than this keep the strip down; longer ones are interludes.
+    public static let gapGrace: Double = 2
+    /// How long the pointer must stay away before the strip comes back.
+    public static let returnDelay: Double = 0.6
+    private var lastSung = -Double.infinity
+    private var lastNear = -Double.infinity
+
+    public init() {}
+
+    /// `now` is in seconds on any steady clock. Returns whether the strip should show.
+    public mutating func update(_ frame: CollapsedLyricFrame, pointerNear: Bool, now: Double) -> Bool {
+        if frame.line != nil { lastSung = now }
+        if pointerNear { lastNear = now }
+        return now - lastSung < Self.gapGrace && now - lastNear >= Self.returnDelay
+    }
+}
+
 /// Presentation derived from the existing parsed document and playback clock.
 /// Plain lyrics have no clock, so they cannot identify a current sung line.
 public struct CollapsedLyricFrame: Equatable, Sendable {

@@ -31,6 +31,7 @@ struct ContentView: View {
     @State private var hoverTask: Task<Void, Never>?
     @State private var isHovering: Bool = false
     @State private var anyDropDebounceTask: Task<Void, Never>?
+    @State private var lyricStripShown = false
 
     @State private var gestureProgress: CGFloat = .zero
 
@@ -64,14 +65,15 @@ struct ContentView: View {
             && (!coordinator.expandingView.show || coordinator.expandingView.type == .music)
     }
 
-    private var showsLowerLyricStrip: Bool { showsCollapsedLyrics && lyricsPlacement == .belowNotch }
+    private var watchesLyricStrip: Bool { showsCollapsedLyrics && lyricsPlacement == .belowNotch && musicManager.isPlaying }
+    private var showsLowerLyricStrip: Bool { watchesLyricStrip && lyricStripShown }
+    private var lyricStripAnimation: Animation { reduceMotion ? .easeInOut(duration: 0.1) : animationSpring }
     private var lowerLyricStripTopInset: CGFloat { max(0, vm.hardwareNotchHeight - vm.effectiveClosedNotchHeight) }
     private var closedArtworkSize: CGFloat { min(26, max(0, vm.effectiveClosedNotchHeight - 12)) }
 
     private var closedMusicCenterWidth: CGFloat {
-        if showsCollapsedLyrics {
-            let width = max(0, 440 - 2 * closedArtworkSize - 16 - 2 * cornerRadiusInsets.closed.bottom)
-            return vm.hasHardwareNotch ? max(vm.closedNotchSize.width, width) : width
+        if showsCollapsedLyrics && lyricsPlacement == .inline {
+            return max(0, 440 - 2 * closedArtworkSize - 16 - 2 * cornerRadiusInsets.closed.bottom)
         }
         if coordinator.expandingView.show && coordinator.expandingView.type == .music && Defaults[.sneakPeekStyles] == .inline {
             return 380
@@ -225,20 +227,6 @@ struct ContentView: View {
                         //                    }
                         //                    .keyboardShortcut("E", modifiers: .command)
                     }
-                VStack(spacing: 0) {
-                    if showsLowerLyricStrip {
-                        Color.clear.frame(height: lowerLyricStripTopInset)
-                        CollapsedLyricsView(fontSize: 12)
-                            .frame(width: 272, height: 24)
-                            .transition(.opacity)
-                    }
-                }
-                .frame(width: 300, height: showsLowerLyricStrip ? 24 + lowerLyricStripTopInset : 0)
-                .background(.black, in: UnevenRoundedRectangle(bottomLeadingRadius: 12, bottomTrailingRadius: 12))
-                .clipped()
-                .animation(.easeInOut(duration: reduceMotion ? 0.1 : 0.25), value: showsLowerLyricStrip)
-                .onHover { handleHover($0) }
-                .onTapGesture { doOpen() }
                 if vm.chinHeight > 0 && !showsLowerLyricStrip {
                     Rectangle()
                         .fill(Color.black.opacity(0.01))
@@ -332,8 +320,18 @@ struct ContentView: View {
                           InlineHUD(type: $coordinator.sneakPeek.type, value: $coordinator.sneakPeek.value, icon: $coordinator.sneakPeek.icon, hoverAnimation: $isHovering, gestureProgress: $gestureProgress)
                               .transition(.opacity)
                       } else if (!coordinator.expandingView.show || coordinator.expandingView.type == .music) && vm.notchState == .closed && (musicManager.isPlaying || !musicManager.isPlayerIdle || hasCollapsedLyricContent) && coordinator.musicLiveActivityEnabled && !vm.hideOnClosed {
-                          MusicLiveActivity()
-                              .frame(alignment: .center)
+                          VStack(spacing: 0) {
+                              MusicLiveActivity()
+                                  .frame(alignment: .center)
+                              // Inside the notch surface, so the notch itself grows down at its own width.
+                              if showsLowerLyricStrip {
+                                  CollapsedLyricsView(fontSize: 12)
+                                      .frame(width: closedMusicCenterWidth + 2 * closedArtworkSize, height: 22)
+                                      .padding(.top, lowerLyricStripTopInset)
+                                      .padding(.bottom, 6)
+                                      .transition(.opacity)
+                              }
+                          }
                       } else if !coordinator.expandingView.show && vm.notchState == .closed && (!musicManager.isPlaying && musicManager.isPlayerIdle) && Defaults[.showNotHumanFace] && !vm.hideOnClosed  {
                           BoringFaceAnimation()
                        } else if vm.notchState == .open {
@@ -433,6 +431,41 @@ struct ContentView: View {
             }
         }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
+        .task(id: watchesLyricStrip ? musicManager.songTitle + "|" + musicManager.artistName : nil) {
+            await runLyricStrip()
+        }
+    }
+
+    /// Keeps the lyric strip out of the hardware notch while lines are sung, clear of the pointer.
+    private func runLyricStrip() async {
+        guard watchesLyricStrip else {
+            lyricStripShown = false
+            return
+        }
+        var strip = CollapsedLyricStrip()
+        while !Task.isCancelled {
+            let frame = CollapsedLyricFrame(document: musicManager.lyricsDocument,
+                                            elapsed: musicManager.estimatedPlaybackPosition() + Defaults[.lyricsTimeOffset],
+                                            duration: musicManager.songDuration)
+            let show = strip.update(frame, pointerNear: pointerIsNearLyricStrip, now: Date().timeIntervalSinceReferenceDate)
+            if show != lyricStripShown { withAnimation(lyricStripAnimation) { lyricStripShown = show } }
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+
+    /// The band the strip hangs in, padded so it moves before the pointer arrives.
+    private var pointerIsNearLyricStrip: Bool {
+        guard let screen = getScreenFrame(vm.screenUUID) else { return false }
+        let pointer = NSEvent.mouseLocation
+        let stripTop = screen.maxY - max(vm.effectiveClosedNotchHeight, vm.hardwareNotchHeight)
+        return abs(pointer.x - screen.midX) < computedChinWidth / 2 + 24
+            && pointer.y < stripTop && pointer.y > stripTop - 28 - 24
+    }
+
+    /// The strip sits below the menu bar row; anything lower is app content the pointer is heading for.
+    private var pointerIsOnLyricStrip: Bool {
+        guard showsLowerLyricStrip, let screen = getScreenFrame(vm.screenUUID) else { return false }
+        return NSEvent.mouseLocation.y < screen.maxY - max(vm.effectiveClosedNotchHeight, vm.hardwareNotchHeight)
     }
 
     @ViewBuilder
@@ -586,6 +619,10 @@ struct ContentView: View {
         hoverTask?.cancel()
         
         if hovering {
+            if pointerIsOnLyricStrip {
+                withAnimation(lyricStripAnimation) { lyricStripShown = false }
+                return
+            }
             withAnimation(animationSpring) {
                 isHovering = true
             }
