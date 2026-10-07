@@ -6,6 +6,26 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.12</title>
+            <pubDate>Wed, 07 Oct 2026 11:26:23 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>14</sparkle:version>
+            <sparkle:shortVersionString>0.1.12</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.12
+
+内置刘海屏的收起态歌词不再挂着一块独立的歌词条。
+
+- 「收起时显示歌词」选择「所有显示器」时，歌词由刘海本身向下延伸出一行，宽度与刘海一致，圆角随之下移，不再有独立色块和接缝。
+- 歌词条在演唱时常驻，相邻两句之间的短暂停顿不会让它收回；较长的间奏和暂停时收回刘海。
+- 指针靠近歌词条时会自动收起，让出下方的标签栏和标题栏，指针离开后恢复。指针经过歌词条不再误触展开刘海；悬停在刘海顶部仍按原设置展开。
+- 无硬件刘海的屏幕显示方式不变。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.12/Islet-0.1.12-build14-universal.zip" length="18014427" type="application/octet-stream" sparkle:edSignature="biSztp5VnG+JJM19jJAaOUsVUww+b1NnM2SrwOnT/pqRXWmHWdDSdWCp8JTnSuMlcVkqX9em2q0TbNXs8o7wDg=="/>
+        </item>
+        <item>
             <title>0.1.11</title>
             <pubDate>Wed, 07 Oct 2026 09:51:37 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
@@ -91,23 +111,6 @@
 提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
 ]]></description>
             <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.zip" length="17600468" type="application/octet-stream" sparkle:edSignature="AptnG00KUM2kVgPXiaOnxxAPGfIwnBO24p9tb7jijo+JVZjGWbMcKnyTZIXkyQQP1nsfdyUV9TGzjnCeS8tgCA=="/>
-        </item>
-        <item>
-            <title>0.1.8</title>
-            <pubDate>Mon, 05 Oct 2026 16:55:52 +0000</pubDate>
-            <link>https://github.com/Ownera1/Islet/releases</link>
-            <sparkle:version>9</sparkle:version>
-            <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.8
-
-- 修复滚动日历、翻回今天或后台刷新后意外进入歌词专注模式的问题。自动专注只在每次展开 Home 时判断一次，手动退出后不会在同一次展开中被重新拉回。
-- 等待今天的日历与提醒事项加载完成再判断，避免把初始空数组当作“今天没有日程”；已加载的缓存也可直接完成判断。
-- 展开时日历回到今天，所选日期与显示的事件共用同一个状态。快速切换日期时，过期或已取消的查询结果不会覆盖当前事件。
-
-提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
-]]></description>
-            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-universal.zip" length="17592525" type="application/octet-stream" sparkle:edSignature="SmBZqulmzSWITv9l2U3wLnfts1YYXA1xKXQAk7A5AcQak3zdRJzANAHVCslteyUwDIPib861ISkd1p6ox6b2Bw=="/>
         </item>
     </channel>
 </rss>
