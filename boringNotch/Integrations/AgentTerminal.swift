@@ -12,7 +12,7 @@ enum AgentTerminal {
             if let url = URL(string: "codex://threads/" + thread.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)!) { NSWorkspace.shared.open(url) }
             return
         }
-        if session.source == "zcode", session.termApp == nil { launch(bundle: "ai.z.zcode", fallbackName: "ZCode"); return }
+        if session.source == "zcode", session.termApp == nil { launch(bundle: "dev.zcode.app", fallbackName: "ZCode"); return }
         if session.source == "google-antigravity", session.termApp == nil { launch(bundle: "com.google.antigravity", fallbackName: "Antigravity"); return }
         if let tty = session.ttyPath, session.terminalName == "Terminal" {
             runScript("""

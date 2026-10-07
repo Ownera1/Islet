@@ -19,6 +19,14 @@ public enum CLIProcessResolver {
         return traeCNBundlePathMarkers.contains { lowercasedPath.contains($0) }
     }
 
+    /// Codex Desktop (bundle `com.openai.codex`, now shipped as `ChatGPT.app`)
+    /// runs its bundled CLI from `Contents/Resources/codex-cli/` and no longer
+    /// hands `__CFBundleIdentifier` down to hooks, so its threads arrived looking
+    /// like terminal CLI sessions and click-to-jump opened Terminal.app.
+    public static func isCodexDesktopAncestry(_ ancestry: [(pid: Int32, executablePath: String?)]) -> Bool {
+        ancestry.contains { $0.executablePath?.lowercased().contains(".app/contents/resources/codex-cli/") == true }
+    }
+
     public static func sourceMatchesExecutablePath(_ path: String, source: String?) -> Bool {
         guard let normalizedSource = SessionSnapshot.normalizedSupportedSource(source) else { return false }
         let lowercasedPath = path.lowercased()

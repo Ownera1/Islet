@@ -9,6 +9,18 @@ final class IntegrationTests: XCTestCase {
         XCTAssertFalse(NotchAgent.antigravity.canApprove)
         XCTAssertEqual(NotchAgent.allCases.filter(\.canApprove).count, 4)
     }
+    func testCodexShutdownHooksUseThreeSecondTimeout() {
+        XCTAssertEqual(HookConfiguration.hookTimeout(agent: .codex, event: "SessionEnd"), 3)
+        XCTAssertEqual(HookConfiguration.hookTimeout(agent: .codex, event: "Interrupt"), 3)
+        XCTAssertEqual(HookConfiguration.hookTimeout(agent: .codex, event: "Stop"), 5)
+        XCTAssertEqual(HookConfiguration.hookTimeout(agent: .claude, event: "SessionEnd"), 5)
+        XCTAssertEqual(HookConfiguration.hookTimeout(agent: .codex, event: "PermissionRequest"), 86400)
+    }
+    func testCodexDesktopIsRecognizedFromAncestry() {
+        let desktop = "/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex"
+        XCTAssertTrue(CLIProcessResolver.isCodexDesktopAncestry([(1, "/bin/sh"), (2, desktop)]))
+        XCTAssertFalse(CLIProcessResolver.isCodexDesktopAncestry([(1, "/bin/zsh"), (2, "/opt/homebrew/bin/codex"), (3, nil)]))
+    }
     func testConfigurationPreservesCommentsAndMixedUserHooks() throws {
         let text = """
         {

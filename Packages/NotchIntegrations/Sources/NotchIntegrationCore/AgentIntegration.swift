@@ -77,7 +77,7 @@ public enum HookConfiguration {
             for name in agent.events {
                 let handler: [String: Any] = [
                     "type": "command", "command": cmd + (agent == .antigravity ? " --event \(name)" : ""),
-                    "timeout": name == "PermissionRequest" ? 86400 : (agent == .antigravity && name == "PreToolUse" ? 30 : 5)
+                    "timeout": hookTimeout(agent: agent, event: name)
                 ]
                 let entry: [String: Any] = agent == .antigravity && name == "Stop"
                     ? handler : ["matcher": agent == .antigravity ? "*" : "", "hooks": [handler]]
@@ -93,6 +93,15 @@ public enum HookConfiguration {
             throw HookConfigurationError.malformed
         }
         return result
+    }
+    static func hookTimeout(agent: NotchAgent, event: String) -> Int {
+        switch (agent, event) {
+        case (_, "PermissionRequest"): return 86400
+        case (.antigravity, "PreToolUse"): return 30
+        // Codex caps these two hooks at 3 seconds.
+        case (.codex, "SessionEnd"), (.codex, "Interrupt"): return 3
+        default: return 5
+        }
     }
     public static func uncomment(_ text: String) -> String {
         let chars = Array(text); var out = ""; var i = 0; var quoted = false; var escaped = false

@@ -503,6 +503,9 @@ if let termApp = env["TERM_PROGRAM"], !termApp.isEmpty {
 if let termBundle = env["__CFBundleIdentifier"], !termBundle.isEmpty {
     json["_term_bundle"] = termBundle
 }
+if effectiveSource == "codex", CLIProcessResolver.isCodexDesktopAncestry(coreAncestry) {
+    json["_term_bundle"] = "com.openai.codex"
+}
 
 // iTerm2 session — extract GUID after "w0t0p0:" prefix for AppleScript matching
 if let iterm = env["ITERM_SESSION_ID"], !iterm.isEmpty {
