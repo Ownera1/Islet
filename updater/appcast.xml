@@ -6,6 +6,23 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.13</title>
+            <pubDate>Thu, 08 Oct 2026 07:12:51 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>15</sparkle:version>
+            <sparkle:shortVersionString>0.1.13</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.13
+
+修复 Claude 桌面版 Code 标签页的提问卡片残留。
+
+- Agent 提问（AskUserQuestion）时，在 Claude 桌面版窗口中作答后，刘海中的同一提问会立即移除，会话回到处理中，不再一直驻留到本轮结束。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.13/Islet-0.1.13-build15-universal.zip" length="18023694" type="application/octet-stream" sparkle:edSignature="SgrqiSqBHppkojbJf8mip2z2OSe041Xsqj9/L+OYOfbXiuDROoUnMwu4VkDzTTOFttwk93zP3IG0mFJ4YhpjAg=="/>
+        </item>
+        <item>
             <title>0.1.12</title>
             <pubDate>Wed, 07 Oct 2026 11:26:23 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
@@ -89,28 +106,6 @@
 提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
 ]]></description>
             <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.9/Islet-0.1.9-build11-universal.zip" length="17927552" type="application/octet-stream" sparkle:edSignature="CJ4lqP0wJl0CLEnxy53FnknrAH3h81rw3KysL9O+glGKMNP5rkkYdmQeynC/pBZXk74cJqfB0Cl03hxh4pa4Ag=="/>
-        </item>
-        <item>
-            <title>0.1.8</title>
-            <pubDate>Mon, 05 Oct 2026 17:35:18 +0000</pubDate>
-            <link>https://github.com/Ownera1/Islet/releases</link>
-            <sparkle:version>10</sparkle:version>
-            <sparkle:shortVersionString>0.1.8</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.8
-
-此发布已更新为 build 10。最新安装包文件名包含 `build10`；已安装 0.1.8 build 9 的用户也可通过自动更新获取此版本。
-
-下载新版：[DMG 安装包](https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.dmg) · [ZIP 应用包](https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.zip)。
-
-- 新增对话结束后自动展开 Agent 状态页，并选中对应 Agent 和会话。默认开启，可在“Agent 与订阅 → Agent 显示”中关闭；重复完成通知与历史对话回放不会反复展开，待处理审批与问题优先显示。
-- 修复滚动日历、翻回今天或后台刷新后意外进入歌词专注模式的问题。自动专注只在每次展开 Home 时判断一次，手动退出后不会在同一次展开中被重新拉回。
-- 等待今天的日历与提醒事项加载完成再判断，避免把初始空数组当作“今天没有日程”；已加载的缓存也可直接完成判断。
-- 展开时日历回到今天，所选日期与显示的事件共用同一个状态。快速切换日期时，过期或已取消的查询结果不会覆盖当前事件。
-
-提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
-]]></description>
-            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.8/Islet-0.1.8-build10-universal.zip" length="17600468" type="application/octet-stream" sparkle:edSignature="AptnG00KUM2kVgPXiaOnxxAPGfIwnBO24p9tb7jijo+JVZjGWbMcKnyTZIXkyQQP1nsfdyUV9TGzjnCeS8tgCA=="/>
         </item>
     </channel>
 </rss>
