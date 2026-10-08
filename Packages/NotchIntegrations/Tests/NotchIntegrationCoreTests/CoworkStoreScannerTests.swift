@@ -237,6 +237,17 @@ final class CoworkStoreScannerTests: XCTestCase {
                                                      finishedTool: nil, finishedInput: input))
     }
 
+    func testAQuestionAnsweredInAppEndsTheRequest() {
+        let questions: [[String: Any]] = [["question": "Which fix?", "options": [["label": "A"], ["label": "B"]]]]
+        XCTAssertTrue(ClaudeDesktop.isAnsweredInApp(requestTool: "AskUserQuestion", requestInput: ["questions": questions],
+                                                    finishedTool: "AskUserQuestion",
+                                                    finishedInput: ["questions": questions, "answers": ["Which fix?": "A"]]))
+        XCTAssertFalse(ClaudeDesktop.isAnsweredInApp(requestTool: "AskUserQuestion", requestInput: ["questions": questions],
+                                                     finishedTool: "AskUserQuestion",
+                                                     finishedInput: ["questions": [["question": "Other?"]], "answers": ["Other?": "A"]]),
+                       "A different question finishing must not drop the request")
+    }
+
     func testMissingLoginMessageNamesClaudeDesktopWhenItIsInstalled() throws {
         let home = (root as NSString).deletingLastPathComponent + "/home"
         XCTAssertEqual(ClaudeDesktop.missingLoginMessage(home: home), "请先登录 Claude Code。")

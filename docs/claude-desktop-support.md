@@ -77,7 +77,7 @@ probe _source=claude _term_bundle=<bundle id 或 empty> hook_event_name=<事件>
 - 点击"打开来源窗口"或"前往处理"时，按 bundle id 用 `NSWorkspace` 打开桌面版。
 - 审批：`ClaudeDesktop.codeTabPermissionHandling` 为 `.island`，与终端会话一样在刘海中显示允许、拒绝按钮，Hook 挂起直到用户在刘海中决定。桌面版同时显示自己的卡片（0.2），两边都可以处理：
   - 在刘海中决定：桌面版按 Hook 的决定执行（允许、拒绝均已实测）。
-  - 在桌面版中决定：桌面版不会结束挂起的 Hook。被审批的工具的 `PostToolUse` / `PostToolUseFailure` 到达时（同一会话、工具名和 `tool_input` 都相同，见 `ClaudeDesktop.isAnsweredInApp`），Islet 回复 `{}` 并移除刘海中的审批卡，会话回到处理中。并行完成的其他工具不影响审批卡。在桌面版中允许已实测；在桌面版中拒绝未实测，预计工具不运行、没有 `PostToolUse`，审批卡在本轮 `Stop` 时移除。
+  - 在桌面版中决定：桌面版不会结束挂起的 Hook。被审批的工具的 `PostToolUse` / `PostToolUseFailure` 到达时（同一会话、工具名和 `tool_input` 都相同；`AskUserQuestion` 回答后输入会多出 `answers`，比较时忽略，见 `ClaudeDesktop.isAnsweredInApp`），Islet 回复 `{}` 并移除刘海中的审批卡，会话回到处理中。并行完成的其他工具不影响审批卡。在桌面版中允许已实测；在桌面版中拒绝未实测，预计工具不运行、没有 `PostToolUse`，审批卡在本轮 `Stop` 时移除。
 
   `.displayOnly`（立即回复 `{}`，刘海只显示等待状态并提示到桌面版处理）保留为备选。
 

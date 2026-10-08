@@ -65,11 +65,14 @@ public enum ClaudeDesktop {
     /// Whether a finished tool (`PostToolUse` / `PostToolUseFailure`) is the
     /// one a held Code-tab request guards, i.e. it was decided in Claude
     /// Desktop's own card. Same tool and same input; a parallel tool that
-    /// finishes meanwhile leaves the request alone.
+    /// finishes meanwhile leaves the request alone. An `AskUserQuestion`
+    /// answered there comes back with the choices merged into its input
+    /// (`answers`, `annotations`), so those keys are not compared.
     public static func isAnsweredInApp(requestTool: String, requestInput: [String: Any],
                                        finishedTool: String?, finishedInput: [String: Any]?) -> Bool {
         guard let finishedTool, finishedTool == requestTool else { return false }
-        return NSDictionary(dictionary: requestInput).isEqual(to: finishedInput ?? [:])
+        let finished = (finishedInput ?? [:]).filter { $0.key != "answers" && $0.key != "annotations" }
+        return NSDictionary(dictionary: requestInput).isEqual(to: finished)
     }
 
     /// `termBundle` is the hook's `_term_bundle` (the host app's
