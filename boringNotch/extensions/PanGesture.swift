@@ -9,13 +9,9 @@ import AppKit
 import SwiftUI
 
 enum PanDirection {
-    case left, right, up, down
+    case up, down
 
-    var isHorizontal: Bool { self == .left || self == .right }
-    var sign: CGFloat { (self == .right || self == .down) ? 1 : -1 }
-
-    func signed(from translation: CGSize) -> CGFloat { (isHorizontal ? translation.width : translation.height) * sign }
-    func signed(deltaX: CGFloat, deltaY: CGFloat) -> CGFloat { (isHorizontal ? deltaX : deltaY) * sign }
+    var sign: CGFloat { self == .down ? 1 : -1 }
 }
 
 extension View {
@@ -24,7 +20,7 @@ extension View {
             .gesture(
                 DragGesture(minimumDistance: 0)
                     .onChanged { value in
-                        let s = direction.signed(from: value.translation)
+                        let s = value.translation.height * direction.sign
                         guard s > 0, s.magnitude >= threshold else { return }
                         action(s.magnitude, .changed)
                     }
@@ -89,14 +85,9 @@ struct ScrollPanState {
         }
         guard startsInside else { return updates }
 
-        let absDX = abs(deltaX)
-        let absDY = abs(deltaY)
-        let axisDominant = direction.isHorizontal
-            ? absDX >= 1.5 * absDY
-            : absDY >= 1.5 * absDX
-        guard axisDominant else { return updates }
+        guard abs(deltaY) >= 1.5 * abs(deltaX) else { return updates }
 
-        let delta = direction.signed(deltaX: deltaX, deltaY: deltaY) * (precise ? 1 : 8)
+        let delta = deltaY * direction.sign * (precise ? 1 : 8)
         guard delta.magnitude > 0.2 else { return updates }
         accumulated = delta > 0 ? accumulated + delta : 0
         if !active && accumulated >= threshold {
