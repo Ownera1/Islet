@@ -22,10 +22,33 @@ public enum ClaudeDesktop {
         return isCoworkSession(id: id) ? displayName + " · Cowork" : displayName
     }
 
-    /// What a click opens: the Cowork screen of that task, nil otherwise.
-    public static func deepLink(id: String, snapshot: SessionSnapshot) -> URL? {
-        guard isDesktopSession(snapshot), isCoworkSession(id: id) else { return nil }
-        return CoworkSessionPolicy.deepLinkURL(sessionId: id)
+    /// What a click opens: the Cowork screen of that task, or the Code-tab
+    /// conversation (`epitaxy` is that tab's route); nil otherwise.
+    public static func deepLink(id: String, snapshot: SessionSnapshot, home: String = HomePaths.userHome) -> URL? {
+        guard isDesktopSession(snapshot) else { return nil }
+        if isCoworkSession(id: id) { return CoworkSessionPolicy.deepLinkURL(sessionId: id) }
+        return codeTabSessionId(cliSessionId: id, home: home).flatMap { URL(string: "claude://claude.ai/epitaxy/\($0)") }
+    }
+
+    /// A Code-tab card is keyed by the CLI session id, while Claude Desktop
+    /// routes by its own `local_<id>`, stored next to `cliSessionId` in
+    /// `claude-code-sessions/<a>/<b>/local_<id>.json`. Read only on click.
+    static func codeTabSessionId(cliSessionId: String, home: String) -> String? {
+        let fm = FileManager.default
+        let root = CoworkPaths.claudeSupportDirectory(home: home) + "/claude-code-sessions"
+        for a in (try? fm.contentsOfDirectory(atPath: root)) ?? [] {
+            for b in (try? fm.contentsOfDirectory(atPath: "\(root)/\(a)")) ?? [] {
+                let dir = "\(root)/\(a)/\(b)"
+                for name in (try? fm.contentsOfDirectory(atPath: dir)) ?? [] where name.hasSuffix(".json") {
+                    guard let data = fm.contents(atPath: "\(dir)/\(name)"),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          json["cliSessionId"] as? String == cliSessionId,
+                          let id = json["sessionId"] as? String, CoworkPaths.isValidSessionId(id) else { continue }
+                    return id
+                }
+            }
+        }
+        return nil
     }
 
     // MARK: Subscription

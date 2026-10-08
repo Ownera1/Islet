@@ -52,6 +52,24 @@ enum AgentTerminal {
             end tell
             """); return
         }
+        if let cwd = session.cwd, session.terminalName == "Ghostty" {
+            // ponytail: Ghostty exposes no tty, so same-folder tabs are told apart by the
+            // session title in the tab title, else the first one wins.
+            runScript("""
+            tell application "Ghostty"
+                set matches to (every terminal whose working directory is \(quote(cwd)))
+                repeat with t in matches
+                    if name of t contains \(quote(session.sessionLabel ?? "")) then
+                        focus t
+                        activate
+                        return
+                    end if
+                end repeat
+                if (count of matches) > 0 then focus (item 1 of matches)
+                activate
+            end tell
+            """); return
+        }
         let names = ["Ghostty": "com.mitchellh.ghostty", "iTerm2": "com.googlecode.iterm2", "Terminal": "com.apple.Terminal", "Warp": "dev.warp.Warp-Stable"]
         launch(bundle: session.termBundleId ?? names[session.terminalName ?? ""] ?? "com.apple.Terminal", fallbackName: session.terminalName ?? "Terminal")
     }

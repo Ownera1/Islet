@@ -220,8 +220,26 @@ final class CoworkStoreScannerTests: XCTestCase {
         var codeTab = SessionSnapshot()
         codeTab.termBundleId = "com.anthropic.claudefordesktop"
         XCTAssertEqual(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: codeTab), "Claude 桌面版")
-        XCTAssertNil(ClaudeDesktop.deepLink(id: "8c6f-session", snapshot: codeTab), "Code-tab sessions activate the app instead")
         XCTAssertNil(ClaudeDesktop.hostLabel(id: "8c6f-session", snapshot: SessionSnapshot()))
+    }
+
+    func testCodeTabDeepLinkResolvesTheDesktopSessionId() throws {
+        let home = (root as NSString).deletingLastPathComponent + "/home"
+        var codeTab = SessionSnapshot()
+        codeTab.termBundleId = "com.anthropic.claudefordesktop"
+        XCTAssertNil(ClaudeDesktop.deepLink(id: "cli-7", snapshot: codeTab, home: home), "No store: activate the app instead")
+
+        let store = home + "/Library/Application Support/Claude/claude-code-sessions/acct/org"
+        try FileManager.default.createDirectory(atPath: store, withIntermediateDirectories: true)
+        for (id, cli) in [("local_a", "cli-6"), ("local_b", "cli-7"), ("../evil", "cli-8")] {
+            try JSONSerialization.data(withJSONObject: ["sessionId": id, "cliSessionId": cli])
+                .write(to: URL(fileURLWithPath: "\(store)/\(cli).json"))
+        }
+        XCTAssertEqual(ClaudeDesktop.deepLink(id: "cli-7", snapshot: codeTab, home: home)?.absoluteString,
+                       "claude://claude.ai/epitaxy/local_b")
+        XCTAssertNil(ClaudeDesktop.deepLink(id: "cli-8", snapshot: codeTab, home: home), "Invalid ids never reach a URL")
+        XCTAssertNil(ClaudeDesktop.deepLink(id: "cli-9", snapshot: codeTab, home: home))
+        XCTAssertNil(ClaudeDesktop.deepLink(id: "cli-7", snapshot: SessionSnapshot(), home: home), "Terminal sessions are not desktop ones")
     }
 
     func testAFinishedToolEndsTheRequestItGuards() {
