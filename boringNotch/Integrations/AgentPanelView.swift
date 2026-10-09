@@ -65,6 +65,12 @@ struct AgentPanelView: View {
                         Circle().fill(monitor.isServiceReady ? Color.agentRunning : .gray).frame(width: 6, height: 6)
                             .accessibilityHidden(true)
                         Text(monitor.serviceStatus).font(.system(size: 11)).foregroundStyle(.gray)
+                        if monitor.selectedAgent != nil {
+                            Spacer(minLength: 0)
+                            Button { monitor.selectedAgent = nil } label: {
+                                Label("全部 Agent", systemImage: "chevron.left").font(.system(size: 11))
+                            }.buttonStyle(.plain).foregroundStyle(.gray).help("返回全部 Agent")
+                        }
                     }.padding(.bottom, 2)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             }
