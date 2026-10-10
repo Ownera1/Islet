@@ -1,6 +1,6 @@
 # Claude 桌面版支持
 
-目标：在 Claude 桌面版里使用 Claude（Code 标签页、Cowork）时，刘海也能显示 Agent 状态和订阅额度。Islet 只读取桌面版的文件，不写入；不解密桌面版的登录凭据，不读取钥匙串里的 "Claude Safe Storage"；不用 refresh token 刷新 OAuth；不为了取额度调用模型。
+目标：在 Claude 桌面版里使用 Claude（Code 标签页、Cowork）时，刘海也能显示 Agent 状态和订阅额度。Islet 只读取桌面版的文件，不写入；不解密桌面版的登录凭据，不读取钥匙串里的 "Claude Safe Storage"；不用 refresh token 刷新 OAuth（命令行版登录过期时交给 Claude Code 自己刷新，见第 7 项）；不为了取额度调用模型。
 
 ## 第 0 步：本机实测
 
@@ -94,7 +94,7 @@ Cowork 在虚拟机里运行，`~/.claude/settings.json` 的 Hook 不会触发�
 
 ## 第 7 项：订阅额度
 
-1. **命令行版凭据 + `/api/oauth/usage`**：使用 `ClaudeCredentialStore.resolve`。先找所配置 Claude 目录自己的登录（`Claude Code-credentials-<目录 SHA-256 前 8 位>` 钥匙串条目和该目录的 `.credentials.json`），没有时才用默认 `~/.claude` 的登录。不刷新 token。
+1. **命令行版凭据 + `/api/oauth/usage`**：使用 `ClaudeCredentialStore.resolve`。先找所配置 Claude 目录自己的登录（`Claude Code-credentials-<目录 SHA-256 前 8 位>` 钥匙串条目和该目录的 `.credentials.json`），没有时才用默认 `~/.claude` 的登录。Islet 自己不刷新 token。access token 只有 8 小时有效期，而桌面版用自己的登录（Code 标签页带 `CLAUDE_CODE_SDK_HAS_HOST_AUTH_REFRESH`），不会刷新命令行版的钥匙串条目；所以过期（或 401）时 `ClaudeCLIRefresh` 运行一次 `claude -p /status --no-session-persistence --strict-mcp-config --settings '{"disableAllHooks":true}'`，由 Claude Code 自己刷新并写回钥匙串，然后重读凭据再请求一次。实测（2.1.295）：0 个 turn、费用 $0、约 5 秒，不留会话记录、不触发 hook。每个配置目录 10 分钟内最多尝试一次；找不到 `claude` 时不尝试。
 2. **桌面版落盘的额度记录**：0.4 在 Claude Code 的记录中没有找到额度信息，因此不实现；Cowork 的 `audit.jsonl` 尚未验证。以后如果在 Cowork 中确认有记录：在 `SubscriptionUsageSource` 中新增 `claudeDesktop`（卡片显示「来源：Claude 桌面版最近一次对话」），`fetchedAt` 取记录时间，只在第 1 条失败时使用或两者都有时取较新的一份，窗口不完整时只显示实际有的窗口；解析器测试使用 0.4 输出的真实结构并去掉身份信息。
 3. **两者都没有**：安装了桌面版时，卡片显示「Claude 桌面版不提供可读取的额度。在终端运行一次 `claude` 登录后，Islet 可显示实时额度。」；未安装时仍显示「请先登录 Claude Code。」
 

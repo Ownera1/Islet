@@ -187,6 +187,23 @@ final class ClaudeQuotaTests: XCTestCase {
         )
     }
 
+    func testCLIRefreshIsThrottledPerConfigDirAndScrubsTheEnvironment() {
+        let dir = "/tmp/claude-refresh-test-" + UUID().uuidString
+        XCTAssertTrue(ClaudeCLIRefresh.reserve(dir, now: now))
+        XCTAssertFalse(ClaudeCLIRefresh.reserve(dir, now: now.addingTimeInterval(ClaudeCLIRefresh.cooldown - 1)))
+        XCTAssertTrue(ClaudeCLIRefresh.reserve(dir + "-other", now: now))
+        XCTAssertTrue(ClaudeCLIRefresh.reserve(dir, now: now.addingTimeInterval(ClaudeCLIRefresh.cooldown)))
+
+        let base = ["USER": "test", "ANTHROPIC_API_KEY": "x", "CLAUDE_CODE_OAUTH_TOKEN": "x", "XPC_SERVICE_NAME": "x"]
+        let plain = ClaudeCLIRefresh.environment(configDir: "/Users/test/.claude", home: "/Users/test", base: base)
+        XCTAssertEqual(plain["HOME"], "/Users/test")
+        XCTAssertEqual(plain["USER"], "test")
+        XCTAssertNil(plain["CLAUDE_CONFIG_DIR"])
+        XCTAssertTrue(plain.keys.allSatisfy { !$0.hasPrefix("ANTHROPIC_") && !$0.hasPrefix("CLAUDE_CODE_") && !$0.hasPrefix("XPC_") })
+        let custom = ClaudeCLIRefresh.environment(configDir: "/Users/test/work", home: "/Users/test", base: base)
+        XCTAssertEqual(custom["CLAUDE_CONFIG_DIR"], "/Users/test/work")
+    }
+
     func testSourceTiersPutTheConfiguredDirFirst() {
         let home = "/Users/test"
         let scoped = ClaudeCredentialStore.scopedKeychainService(configDir: "/Users/test/work")

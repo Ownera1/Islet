@@ -148,9 +148,16 @@ public enum SubscriptionClient {
     public static func fetch(_ provider: SubscriptionProvider, home: String = HomePaths.userHome, claudeHome: String? = nil, codexHome: String? = nil) async throws -> SubscriptionUsage {
         switch provider {
         case .claude:
-            let quota = try await ClaudeQuotaClient.fetch(credential: {
+            let credential: @Sendable () -> ClaudeOAuthCredential? = {
                 ClaudeCredentialStore.resolve(claudeHome: claudeHome, home: home)
-            })
+            }
+            let quota: ClaudeQuotaSnapshot
+            do { quota = try await ClaudeQuotaClient.fetch(credential: credential) }
+            catch ClaudeQuotaClientError.unauthorized {
+                // Expired: let Claude Code refresh its own login, then read it again.
+                guard await ClaudeCLIRefresh.refresh(claudeHome: claudeHome, home: home) else { throw ClaudeQuotaClientError.unauthorized }
+                quota = try await ClaudeQuotaClient.fetch(credential: credential)
+            }
             let windows = quota.limits.map { UsageWindow(id: $0.kind.rawValue + ($0.scopeLabel ?? ""), label: $0.scopeLabel ?? ($0.kind == .session ? "5 小时" : "每周"), usedPercent: $0.percent, resetsAt: $0.resetsAt) }
             return SubscriptionUsage(provider: provider, plan: nil, windows: windows, fetchedAt: quota.fetchedAt)
         case .openai:

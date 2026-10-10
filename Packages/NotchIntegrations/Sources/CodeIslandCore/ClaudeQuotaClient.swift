@@ -16,7 +16,7 @@ public struct ClaudeOAuthCredential: Equatable, Sendable {
 
 /// Read-only access to the Claude Code login. Never refreshes the token —
 /// rotating it from here would invalidate the copy Claude Code holds, so an
-/// expired token simply means "run Claude Code once".
+/// expired token is left to Claude Code itself (`ClaudeCLIRefresh`).
 public enum ClaudeCredentialStore {
     /// Keychain generic-password service Claude Code writes on macOS.
     public static let keychainService = "Claude Code-credentials"
@@ -102,6 +102,30 @@ public enum ClaudeCredentialStore {
         return data
     }
 
+    /// Like `runCapturingStdout` with all output discarded, so a grandchild
+    /// still holding a pipe can never keep the caller past `timeout`.
+    static func runQuietly(path: String, args: [String], environment: [String: String], timeout: TimeInterval) {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: path)
+        proc.arguments = args
+        proc.environment = environment
+        proc.currentDirectoryURL = FileManager.default.temporaryDirectory
+        proc.standardInput = FileHandle.nullDevice
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        let flag = ExitFlag()
+        let exited = DispatchSemaphore(value: 0)
+        proc.terminationHandler = { _ in
+            flag.markExited()
+            exited.signal()
+        }
+        do { try proc.run() } catch { return }
+        let pid = proc.processIdentifier
+        guard exited.wait(timeout: .now() + timeout) == .timedOut else { return }
+        if !flag.hasExited { kill(pid, SIGTERM) }
+        if exited.wait(timeout: .now() + 1) == .timedOut, !flag.hasExited { kill(pid, SIGKILL) }
+    }
+
     /// `-w` prints the secret followed by a newline.
     static func trimmingSecretOutput(_ data: Data) -> Data? {
         var bytes = data
@@ -166,9 +190,7 @@ public enum ClaudeCredentialStore {
     /// Where to look, most specific tier first. Exposed for tests.
     static func sourceTiers(claudeHome: String?, home: String) -> [[Source]] {
         let defaultDir = ClaudeConfigPaths.canonical(home + "/.claude")
-        let configured = claudeHome
-            .flatMap { ClaudeConfigPaths.normalized($0, homeDir: home) }
-            .map(ClaudeConfigPaths.canonical) ?? defaultDir
+        let configured = configuredDir(claudeHome, home: home)
         let defaultTier: [Source] = [.keychain(keychainService), .file(defaultDir + "/.credentials.json")]
         guard configured != defaultDir else {
             // `CLAUDE_CONFIG_DIR=~/.claude` set explicitly still gets the hashed name.
@@ -180,11 +202,77 @@ public enum ClaudeCredentialStore {
         ]
     }
 
+    /// `claudeHome` resolved the way Claude Code would, nil meaning `~/.claude`.
+    static func configuredDir(_ claudeHome: String?, home: String) -> String {
+        claudeHome
+            .flatMap { ClaudeConfigPaths.normalized($0, homeDir: home) }
+            .map(ClaudeConfigPaths.canonical) ?? ClaudeConfigPaths.canonical(home + "/.claude")
+    }
+
     /// Orders credentials: unexpired over expired, then by expiry.
     private static func rank(_ credential: ClaudeOAuthCredential, now: Date) -> (Int, Date) {
         let expiry = credential.expiresAt ?? .distantPast
         let usable = credential.expiresAt.map { $0 > now } ?? true
         return (usable ? 1 : 0, expiry)
+    }
+}
+
+/// Has Claude Code refresh its own expired login, which it otherwise does
+/// only when the user runs it — Claude Desktop signs in on its own and never
+/// touches the CLI's keychain item. A print-mode `/status` makes the CLI
+/// check (and refresh, under its own lock) its login, then is rejected
+/// locally: no turn, no model call. Persistence, hooks and MCP servers are
+/// off, so it leaves no transcript and no notch card. Islet itself still
+/// never uses the refresh token.
+public enum ClaudeCLIRefresh {
+    static let cooldown: TimeInterval = 600
+    static let arguments = ["-p", "/status", "--no-session-persistence", "--strict-mcp-config", "--settings", #"{"disableAllHooks":true}"#]
+    private static let lock = NSLock()
+    private static var lastAttempt: [String: Date] = [:]
+
+    /// Runs the CLI for `claudeHome` at most once per `cooldown`. True when it
+    /// ran, i.e. the login is worth reading again.
+    public static func refresh(claudeHome: String?, home: String = NSHomeDirectory()) async -> Bool {
+        let dir = ClaudeCredentialStore.configuredDir(claudeHome, home: home)
+        guard let binary = binary(home: home), reserve(dir) else { return false }
+        let env = environment(configDir: dir, home: home)
+        // Blocks for up to the timeout, so off the cooperative pool.
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .utility).async {
+                ClaudeCredentialStore.runQuietly(path: binary, args: arguments, environment: env, timeout: 15)
+                continuation.resume()
+            }
+        }
+        return true
+    }
+
+    static func binary(home: String, environment: [String: String] = ProcessInfo.processInfo.environment) -> String? {
+        let paths = (environment["PATH"] ?? "").split(separator: ":").filter { $0.hasPrefix("/") }.map { String($0) + "/claude" }
+        let candidates: [String] = [home + "/.local/bin/claude", home + "/.claude/local/claude"] + paths
+            + ["/opt/homebrew/bin/claude", "/usr/local/bin/claude"]
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0) }
+    }
+
+    /// Built from scratch so no `ANTHROPIC_*` / `CLAUDE_CODE_*` override or
+    /// XPC variable reaches the CLI; a custom config dir is passed on so the
+    /// CLI refreshes that dir's own login.
+    static func environment(configDir: String, home: String, base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        var env = [
+            "HOME": home,
+            "PATH": [home + "/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"].joined(separator: ":"),
+            "BROWSER": "/usr/bin/false",
+            "NO_COLOR": "1",
+        ]
+        for key in ["USER", "LOGNAME", "TMPDIR", "LANG"] { env[key] = base[key] }
+        if configDir != ClaudeConfigPaths.canonical(home + "/.claude") { env["CLAUDE_CONFIG_DIR"] = configDir }
+        return env
+    }
+
+    static func reserve(_ dir: String, now: Date = Date()) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        if let last = lastAttempt[dir], now.timeIntervalSince(last) < cooldown { return false }
+        lastAttempt[dir] = now
+        return true
     }
 }
 
