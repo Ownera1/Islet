@@ -1775,6 +1775,17 @@ struct Shortcuts: View {
             Section {
                 KeyboardShortcuts.Recorder("展开/收起刘海：", name: .toggleNotchOpen)
             }
+            Section {
+                KeyboardShortcuts.Recorder("允许命令：", name: .approveAgentRequest)
+                KeyboardShortcuts.Recorder("拒绝命令 / 取消问题：", name: .denyAgentRequest)
+            } header: {
+                Text("Agent")
+            } footer: {
+                Text("仅在刘海中有待处理的审批时生效，其余时间不占用按键。")
+                    .multilineTextAlignment(.trailing)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
         }
         .accentColor(.effectiveAccent)
         .navigationTitle("快捷键")

@@ -1,5 +1,6 @@
 import SwiftUI
 import Defaults
+import KeyboardShortcuts
 import CodeIslandCore
 import NotchIntegrationCore
 
@@ -397,9 +398,9 @@ private struct AgentRequestView: View {
                 }.frame(maxWidth: .infinity, alignment: .leading)
             }
             HStack {
-                Button(request.questions.isEmpty ? "拒绝" : "取消") { monitor.decide(request, allow: false) }
+                Button((request.questions.isEmpty ? "拒绝" : "取消") + shortcutHint(.denyAgentRequest)) { monitor.decide(request, allow: false) }
                 Spacer()
-                Button(request.questions.isEmpty ? "允许一次" : "提交回答") {
+                Button(request.questions.isEmpty ? "允许一次" + shortcutHint(.approveAgentRequest) : "提交回答") {
                     monitor.decide(request, allow: true, answers: request.questions.isEmpty ? nil : answers)
                 }.buttonStyle(.borderedProminent).tint(.green)
                 .disabled(!request.questions.allSatisfy { !(answers[$0.key] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
@@ -407,6 +408,7 @@ private struct AgentRequestView: View {
         }
     }
 }
+private func shortcutHint(_ name: KeyboardShortcuts.Name) -> String { name.shortcut.map { " \($0)" } ?? "" }
 private func statusLabel(_ status: AgentStatus) -> String {
     switch status { case .idle: return "已完成 / 空闲"; case .processing: return "思考中"; case .running: return "执行中"; case .waitingApproval: return "等待审批"; case .waitingQuestion: return "等待回答" }
 }

@@ -129,7 +129,8 @@ import NotchIntegrationCore
         try event(.claude, "Stop", id: "desktop", extra: desktop)
         precondition(notifications == desktopTurnBefore + 1, "A Code-tab turn completion expands")
         try event(.claude, "PermissionRequest", id: "terminal", extra: ["tool_name": "Bash"])
-        precondition(monitor.requests.count == 1, "Terminal sessions keep the island approval flow")
+        precondition(monitor.requests.count == 1 && monitor.shortcutRequest?.sessionID == "terminal",
+            "Terminal sessions keep the island approval flow, answerable by shortcut")
         try event(.claude, "SessionEnd", id: "terminal")
         try event(.claude, "SessionEnd", id: "desktop")
         precondition(monitor.requests.isEmpty)

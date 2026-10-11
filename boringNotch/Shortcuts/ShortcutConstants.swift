@@ -15,4 +15,6 @@ extension KeyboardShortcuts.Name {
     static let increaseBacklight = Self("increaseBacklight", default: .init(.f2, modifiers: [.command]))
     static let toggleSneakPeek = Self("toggleSneakPeek", default: .init(.h, modifiers: [.command, .shift]))
     static let toggleNotchOpen = Self("toggleNotchOpen", default: .init(.i, modifiers: [.command, .shift]))
+    static let approveAgentRequest = Self("approveAgentRequest", default: .init(.y, modifiers: [.control, .option]))
+    static let denyAgentRequest = Self("denyAgentRequest", default: .init(.n, modifiers: [.control, .option]))
 }

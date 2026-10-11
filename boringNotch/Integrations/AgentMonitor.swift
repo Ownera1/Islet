@@ -40,6 +40,8 @@ final class AgentMonitor: ObservableObject {
         selectedAgent = NotchAgent(rawValue: preferences.string(forKey: "selectedAgentFramework") ?? "")
     }
     var isServiceReady: Bool { serviceStatus == "Agent 服务已就绪" }
+    /// The request the approve/deny shortcuts answer: the one on screen, else the oldest.
+    var shortcutRequest: PendingAgentRequest? { requests.first { $0.sessionID == selectedSessionID } ?? requests.first }
     /// An approval or question is open, held here or mirrored from its host app.
     var isAwaitingAnswer: Bool {
         !requests.isEmpty || sessions.values.contains { $0.status == .waitingApproval || $0.status == .waitingQuestion }

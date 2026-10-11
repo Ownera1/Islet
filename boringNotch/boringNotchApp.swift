@@ -81,6 +81,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var dragDetectors: [String: DragDetector] = [:] // UUID -> DragDetector
     private var activeDisplayTracker = ActiveDisplayTracker()
     private var activeDisplayTimer: Timer?
+    private var agentShortcutsSubscription: AnyCancellable?
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
@@ -430,6 +431,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 }
             }
+        }
+
+        // Questions need answers typed in the notch, so approve only covers permissions.
+        KeyboardShortcuts.onKeyDown(for: .approveAgentRequest) {
+            guard let request = AgentMonitor.shared.shortcutRequest, request.questions.isEmpty else { return }
+            AgentMonitor.shared.decide(request, allow: true)
+        }
+        KeyboardShortcuts.onKeyDown(for: .denyAgentRequest) {
+            guard let request = AgentMonitor.shared.shortcutRequest else { return }
+            AgentMonitor.shared.decide(request, allow: false)
+        }
+        // Global hotkeys swallow their keys in every app, so they are live only while a request waits.
+        agentShortcutsSubscription = AgentMonitor.shared.$requests.map(\.isEmpty).removeDuplicates().sink { idle in
+            let names: [KeyboardShortcuts.Name] = [.approveAgentRequest, .denyAgentRequest]
+            idle ? KeyboardShortcuts.disable(names) : KeyboardShortcuts.enable(names)
         }
 
         if !Defaults[.showOnAllDisplays] {
