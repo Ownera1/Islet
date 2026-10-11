@@ -40,6 +40,10 @@ final class AgentMonitor: ObservableObject {
         selectedAgent = NotchAgent(rawValue: preferences.string(forKey: "selectedAgentFramework") ?? "")
     }
     var isServiceReady: Bool { serviceStatus == "Agent 服务已就绪" }
+    /// An approval or question is open, held here or mirrored from its host app.
+    var isAwaitingAnswer: Bool {
+        !requests.isEmpty || sessions.values.contains { $0.status == .waitingApproval || $0.status == .waitingQuestion }
+    }
     private var cleanup: Timer?
     var overview: [AgentOverviewEntry] { AgentOverviewEntry.entries(sessions: sessions) }
     var connectedAgents: [AgentOverviewEntry] { overview.filter { $0.state != .offline } }

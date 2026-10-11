@@ -114,13 +114,13 @@ import NotchIntegrationCore
             && monitor.sessions["desktop"]?.status == .processing, "Claude Desktop Code-tab hooks create a session")
         let touch: [String: Any] = ["tool_name": "Bash", "tool_input": ["command": "touch /tmp/x"]]
         try event(.claude, "PermissionRequest", id: "desktop", extra: desktop.merging(touch) { $1 })
-        precondition(monitor.requests.count == 1 && monitor.sessions["desktop"]?.status == .waitingApproval
+        precondition(monitor.requests.count == 1 && monitor.sessions["desktop"]?.status == .waitingApproval && monitor.isAwaitingAnswer
             && notifications == desktopBefore + 1 && monitor.selectedSessionID == "desktop",
             "Claude Desktop Code-tab permissions are answered in the notch")
         try event(.claude, "PostToolUse", id: "desktop", extra: desktop.merging(["tool_name": "Read", "tool_input": ["file_path": "/tmp/y"]]) { $1 })
         precondition(monitor.requests.count == 1, "A parallel tool finishing keeps the request")
         try event(.claude, "PostToolUse", id: "desktop", extra: desktop.merging(touch) { $1 })
-        precondition(monitor.requests.isEmpty && monitor.sessions["desktop"]?.status == .processing,
+        precondition(monitor.requests.isEmpty && monitor.sessions["desktop"]?.status == .processing && !monitor.isAwaitingAnswer,
             "Approved in Claude Desktop's own card: the guarded tool finishing drops the stale request")
         try event(.claude, "PermissionRequest", id: "desktop", extra: desktop.merging(touch) { $1 })
         try event(.claude, "PostToolUseFailure", id: "desktop", extra: desktop.merging(touch) { $1 })

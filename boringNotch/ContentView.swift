@@ -430,6 +430,13 @@ struct ContentView: View {
                 }
             }
         }
+        .onChange(of: agentMonitor.isAwaitingAnswer) { wasAwaiting, isAwaiting in
+            // The question that revealed the panel was answered, here or in the host app.
+            guard wasAwaiting, !isAwaiting, coordinator.currentView == .agents, vm.notchState == .open, !isHovering,
+                  !vm.isBatteryPopoverActive, !SharingStateManager.shared.preventNotchClose else { return }
+            hoverTask?.cancel()
+            vm.close()
+        }
         .onDrop(of: [.fileURL, .url, .utf8PlainText, .plainText, .data], delegate: GeneralDropTargetDelegate(isTargeted: $vm.generalDropTargeting))
         .task(id: watchesLyricStrip ? musicManager.songTitle + "|" + musicManager.artistName : nil) {
             await runLyricStrip()
