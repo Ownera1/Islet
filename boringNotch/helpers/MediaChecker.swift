@@ -15,7 +15,17 @@ final class MediaChecker: Sendable {
         case timeout
     }
 
-    func checkDeprecationStatus() async throws -> Bool {
+    /// The adapter's test also exits 1 when its test client is slow to start
+    /// (e.g. a busy login), so only a failure that repeats counts.
+    func checkDeprecationStatus(attempts: Int = 3) async throws -> Bool {
+        for attempt in 1...attempts {
+            if try await !runAdapterTest() { return false }
+            if attempt < attempts { try await Task.sleep(for: .seconds(2)) }
+        }
+        return true
+    }
+
+    private func runAdapterTest() async throws -> Bool {
         try await Task.detached(priority: .userInitiated) {
             guard let scriptURL = Bundle.main.url(forResource: "mediaremote-adapter", withExtension: "pl"),
                   let nowPlayingTestClientPath = Bundle.main.url(forResource: "MediaRemoteAdapterTestClient", withExtension: nil)?.path,
