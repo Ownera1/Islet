@@ -1,5 +1,6 @@
 import AppKit
 import CodeIslandCore
+import SwiftMath
 import SwiftUI
 
 // MARK: - Entry point
@@ -182,13 +183,7 @@ private struct MarkdownBlockView: View {
                 .foregroundStyle(IslandMarkdownStyle.strong)
                 .fixedSize(horizontal: false, vertical: true)
         case .paragraph(let text):
-            // Pinned to its full height: the scroll views of neighbouring code
-            // blocks and tables are vertically flexible and would otherwise
-            // take the space and truncate the prose.
-            Text(IslandMarkdownInline.text(text))
-                .font(IslandMarkdownStyle.font(fontSize))
-                .foregroundStyle(IslandMarkdownStyle.body)
-                .fixedSize(horizontal: false, vertical: true)
+            MarkdownParagraphView(text: text, fontSize: fontSize)
         case .list(let list):
             MarkdownListView(list: list, fontSize: fontSize, depth: listDepth)
         case .code(let code):
@@ -209,6 +204,143 @@ private struct MarkdownBlockView: View {
                 .fill(IslandMarkdownStyle.hairline)
                 .frame(height: 1)
                 .padding(.vertical, 2)
+        }
+    }
+}
+
+// MARK: - Paragraphs and math
+
+/// A paragraph whose TeX (`$…$`, `$$…$$`) is typeset by SwiftMath: inline
+/// math sits on the text baseline, display math gets a row of its own.
+private struct MarkdownParagraphView: View {
+    let text: String
+    let fontSize: CGFloat
+
+    private enum Row {
+        case line([MarkdownMathSegment])
+        case display(String)
+    }
+
+    var body: some View {
+        let segments = MarkdownMath.segments(text)
+        if segments == [.text(text)] {
+            prose(Text(IslandMarkdownInline.text(text)))
+        } else {
+            VStack(alignment: .leading, spacing: IslandMarkdownStyle.blockSpacing(fontSize)) {
+                ForEach(Array(Self.rows(segments).enumerated()), id: \.offset) { _, row in
+                    switch row {
+                    case .line(let parts): prose(inlineText(parts))
+                    case .display(let latex): displayMath(latex)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Pinned to its full height: the scroll views of neighbouring code
+    /// blocks and tables are vertically flexible and would otherwise take
+    /// the space and truncate the prose.
+    private func prose(_ text: Text) -> some View {
+        text
+            .font(IslandMarkdownStyle.font(fontSize))
+            .foregroundStyle(IslandMarkdownStyle.body)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func inlineText(_ parts: [MarkdownMathSegment]) -> Text {
+        // Joined through an interpolation: `+` is deprecated, and a literal
+        // would be picked up by the string catalog as "%@%@".
+        var joined = LocalizedStringKey.StringInterpolation(literalCapacity: 0, interpolationCount: parts.count)
+        for part in parts {
+            switch part {
+            case .text(let source):
+                joined.appendInterpolation(Text(IslandMarkdownInline.text(source)))
+            case .inline(let latex), .display(let latex):
+                if let math = IslandMath.render(latex, fontSize: fontSize, display: false) {
+                    joined.appendInterpolation(Text(Image(nsImage: math.image).renderingMode(.template)).baselineOffset(-math.descent))
+                } else {
+                    joined.appendInterpolation(Text(verbatim: "$\(latex)$"))
+                }
+            }
+        }
+        return Text(LocalizedStringKey(stringInterpolation: joined))
+    }
+
+    @ViewBuilder
+    private func displayMath(_ latex: String) -> some View {
+        if let math = IslandMath.render(latex, fontSize: fontSize, display: true) {
+            // Shrinks an equation wider than the card; never enlarges one.
+            Image(nsImage: math.image)
+                .renderingMode(.template)
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: math.image.size.width)
+                .foregroundStyle(IslandMarkdownStyle.body)
+                .frame(maxWidth: .infinity)
+        } else {
+            prose(Text(verbatim: "$$\(latex)$$"))
+        }
+    }
+
+    /// Splits off display math, dropping the line breaks that set it apart.
+    private static func rows(_ segments: [MarkdownMathSegment]) -> [Row] {
+        var rows: [Row] = []
+        var line: [MarkdownMathSegment] = []
+        func flushLine() {
+            if !line.isEmpty { rows.append(.line(line)) }
+            line = []
+        }
+        func isDisplay(_ index: Int) -> Bool {
+            guard segments.indices.contains(index), case .display = segments[index] else { return false }
+            return true
+        }
+        for (index, segment) in segments.enumerated() {
+            switch segment {
+            case .display(let latex):
+                flushLine()
+                rows.append(.display(latex))
+            case .text(var text):
+                if isDisplay(index - 1) { text = String(text.drop(while: \.isWhitespace)) }
+                if isDisplay(index + 1) { while text.last?.isWhitespace == true { text.removeLast() } }
+                if !text.isEmpty { line.append(.text(text)) }
+            case .inline:
+                line.append(segment)
+            }
+        }
+        flushLine()
+        return rows
+    }
+}
+
+/// TeX typeset by SwiftMath into template images, so the text colour
+/// applies. Cached: card bodies re-run on every hover and expand animation.
+enum IslandMath {
+    struct Rendered {
+        let image: NSImage
+        /// Depth below the baseline, to sit inline math on the text's baseline.
+        let descent: CGFloat
+    }
+
+    private static var cache = TextRenderCache<String, Rendered?>(countLimit: 256)
+
+    static func render(_ latex: String, fontSize: CGFloat, display: Bool) -> Rendered? {
+        cache.value(for: "\(display)|\(fontSize)|\(latex)") {
+            let label = MTMathUILabel()
+            // Latin Modern runs small next to the monospaced prose.
+            label.font = MTFontManager.manager.latinModernFont(withSize: fontSize + 2)
+            label.labelMode = display ? .display : .text
+            label.latex = latex
+            guard label.error == nil else { return nil }
+            label.frame = CGRect(origin: .zero, size: label.fittingSize)
+            label.layout()
+            guard let line = label.displayList, label.frame.width > 0 else { return nil }
+            let image = NSImage(size: label.frame.size, flipped: false) { _ in
+                guard let context = NSGraphicsContext.current?.cgContext else { return false }
+                line.draw(context)
+                return true
+            }
+            image.isTemplate = true
+            return Rendered(image: image, descent: line.descent)
         }
     }
 }

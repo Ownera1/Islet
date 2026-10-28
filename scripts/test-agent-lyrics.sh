@@ -9,7 +9,7 @@ mkdir -p build/AgentLyricsModuleCache build/agent-lyrics-previews
 xcrun swiftc -swift-version 5 -parse-as-library \
   -module-cache-path build/AgentLyricsModuleCache \
   -I "$TASK_APP_PRODUCTS" -I "$TASK_CORE_PRODUCTS" \
-  "$TASK_APP_PRODUCTS/Defaults.o" \
+  "$TASK_APP_PRODUCTS/Defaults.o" "$TASK_APP_PRODUCTS/SwiftMath.o" \
   "$TASK_CORE_PRODUCTS/NotchIntegrationCore.o" "$TASK_CORE_PRODUCTS/CodeIslandCore.o" \
   boringNotch/Integrations/AgentMonitor.swift \
   boringNotch/Integrations/AgentPanelView.swift \
