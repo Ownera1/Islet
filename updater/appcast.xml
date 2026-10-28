@@ -6,6 +6,24 @@
         <description>Signed updates for Islet</description>
         <language>zh-cn</language>
         <item>
+            <title>0.1.18</title>
+            <pubDate>Wed, 28 Oct 2026 07:18:35 +0000</pubDate>
+            <link>https://github.com/Ownera1/Islet/releases</link>
+            <sparkle:version>20</sparkle:version>
+            <sparkle:shortVersionString>0.1.18</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
+            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.18
+
+- 网易云音乐「喜欢」同步：播放网易云音乐时，点歌曲页的爱心会直接喜欢／取消喜欢当前歌曲，爱心状态也会随网易云更新。首次使用需在「系统设置 → 隐私与安全性 → 辅助功能」中允许 Islet。
+- Apple Music 的爱心按钮修复：选择 Apple Music 作为音乐来源时，点击爱心现在能正确收藏歌曲；使用「系统正在播放」时，切歌后爱心状态会跟着刷新。
+- Agent 状态页支持数学公式：回复中的 `$…$`（行内）和 `$$…$$`（独立公式）会排版显示，价格之类的 `$5` 仍按普通文字显示。
+- 修复「媒体」设置中「系统正在播放」偶尔消失、只剩 Apple Music／Spotify／YouTube Music，且需重启才恢复的问题。
+
+提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
+]]></description>
+            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.18/Islet-0.1.18-build20-universal.zip" length="22955218" type="application/octet-stream" sparkle:edSignature="ycSBxXff3GuWRcZ0x0b9Svr5l1z//2kpyWRZsh2Ap4uAsxk9YIas72+sfVnrL/X+bPVbXWhRnaeQqA0UnBfDDw=="/>
+        </item>
+        <item>
             <title>0.1.17</title>
             <pubDate>Sun, 11 Oct 2026 08:29:09 +0000</pubDate>
             <link>https://github.com/Ownera1/Islet/releases</link>
@@ -69,23 +87,6 @@ Agent 卡片的「打开来源窗口」和「前往处理」可以直接跳到�
 提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
 ]]></description>
             <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.14/Islet-0.1.14-build16-universal.zip" length="18030372" type="application/octet-stream" sparkle:edSignature="ftzYr3qO4IzET8K3wqPQ1QTCIHR0VjqCxEnsZYzXypnaYtwLOo6QBQ2YPmZLKUZZhN25HlF5saaZJJeQJxBdDw=="/>
-        </item>
-        <item>
-            <title>0.1.13</title>
-            <pubDate>Thu, 08 Oct 2026 07:12:51 +0000</pubDate>
-            <link>https://github.com/Ownera1/Islet/releases</link>
-            <sparkle:version>15</sparkle:version>
-            <sparkle:shortVersionString>0.1.13</sparkle:shortVersionString>
-            <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>
-            <description sparkle:format="markdown"><![CDATA[# Islet 0.1.13
-
-修复 Claude 桌面版 Code 标签页的提问卡片残留。
-
-- Agent 提问（AskUserQuestion）时，在 Claude 桌面版窗口中作答后，刘海中的同一提问会立即移除，会话回到处理中，不再一直驻留到本轮结束。
-
-提供 Apple Silicon 与 Intel 通用 DMG／ZIP；自动更新使用 Sparkle Ed25519 签名。应用沿用 ad-hoc 签名，未经过 Apple 公证。
-]]></description>
-            <enclosure url="https://github.com/Ownera1/Islet/releases/download/v0.1.13/Islet-0.1.13-build15-universal.zip" length="18023694" type="application/octet-stream" sparkle:edSignature="SgrqiSqBHppkojbJf8mip2z2OSe041Xsqj9/L+OYOfbXiuDROoUnMwu4VkDzTTOFttwk93zP3IG0mFJ4YhpjAg=="/>
         </item>
     </channel>
 </rss>
