@@ -152,6 +152,22 @@ final class XPCHelperClient: NSObject, NotchMediaKeyCallbacks {
         }
     }
     
+    nonisolated func netEaseLike(press: Bool) async -> Bool? {
+        do {
+            let service = await MainActor.run {
+                ensureRemoteService()
+            }
+            let result: NSNumber? = try await service.withContinuation { service, continuation in
+                service.netEaseLike(press) { liked in
+                    continuation.resume(returning: liked)
+                }
+            }
+            return result?.boolValue
+        } catch {
+            return nil
+        }
+    }
+    
     nonisolated func mediaKeyDown(_ keyCode: Int, modifiers: UInt) {
         Task { @MainActor in self.onMediaKeyDown?(keyCode, modifiers) }
     }

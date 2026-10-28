@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import AppKit
 import ApplicationServices
 import IOKit
 import CoreGraphics
@@ -29,6 +30,32 @@ class BoringNotchXPCHelper: NSObject, BoringNotchXPCHelperProtocol {
             if MediaKeyEventTap.canIntercept { reply(true); return }
             if promptIfNeeded { self.requestAccessibilityAuthorization() }
             reply(false)
+        }
+    }
+
+    @objc func netEaseLike(_ press: Bool, with reply: @escaping (NSNumber?) -> Void) {
+        // NetEase retitles its Controls menu item between these as the song is liked.
+        let likedByTitle = ["Like": false, "喜欢歌曲": false, "Dislike": true, "取消喜欢": true]
+        DispatchQueue.main.async {
+            guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: "com.netease.163music").first
+            else { reply(nil); return }
+            func value(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+                var value: CFTypeRef?
+                return AXUIElementCopyAttributeValue(element, attribute as CFString, &value) == .success ? value : nil
+            }
+            func children(_ element: AXUIElement) -> [AXUIElement] {
+                value(element, kAXChildrenAttribute) as? [AXUIElement] ?? []
+            }
+            guard let menuBar = value(AXUIElementCreateApplication(app.processIdentifier), kAXMenuBarAttribute)
+            else { reply(nil); return }
+            // Menu bar item → its menu → menu items.
+            for item in children(menuBar as! AXUIElement).flatMap(children).flatMap(children) {
+                guard let title = value(item, kAXTitleAttribute) as? String, let liked = likedByTitle[title] else { continue }
+                if press { AXUIElementPerformAction(item, kAXPressAction as CFString) }
+                reply(liked as NSNumber)
+                return
+            }
+            reply(nil)
         }
     }
 

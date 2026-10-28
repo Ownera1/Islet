@@ -28,15 +28,31 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         return bundleID == "com.apple.Music" || bundleID == "com.spotify.client"
     }
 
+    /// NetEase Cloud Music has no scripting or MediaRemote like command; its
+    /// Controls → Like menu item is pressed through the helper instead.
+    static let netEaseBundleID = "com.netease.163music"
+
     var supportsFavorite: Bool {
         let bundleID = playbackState.bundleIdentifier
-        return bundleID == "com.apple.Music"
+        return bundleID == "com.apple.Music" || bundleID == Self.netEaseBundleID
     }
 
     func setFavorite(_ favorite: Bool) async {
         let bundleID = playbackState.bundleIdentifier
         
-        if bundleID == "com.apple.Music" {
+        if bundleID == Self.netEaseBundleID {
+            // The menu item toggles, so press it only when NetEase's own state
+            // differs, then give it a moment to retitle the item (Like ↔ Dislike).
+            let helper = XPCHelperClient.shared
+            guard await helper.ensureAccessibilityAuthorization(promptIfNeeded: true),
+                  let liked = await helper.netEaseLike(press: false) else { return }
+            if liked != favorite, await helper.netEaseLike(press: true) != nil {
+                for _ in 0..<5 {
+                    try? await Task.sleep(for: .milliseconds(200))
+                    if await helper.netEaseLike(press: false) == favorite { break }
+                }
+            }
+        } else if bundleID == "com.apple.Music" {
             let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
             if !runningApps.isEmpty {
                 let script = """
@@ -303,36 +319,46 @@ final class NowPlayingController: ObservableObject, MediaControllerProtocol {
         
         newPlaybackState.volume = payload.volume ?? (diff ? self.playbackState.volume : 0.5)
         
+        let trackChanged = newPlaybackState.title != playbackState.title
+            || newPlaybackState.bundleIdentifier != playbackState.bundleIdentifier
+        newPlaybackState.isFavorite = trackChanged ? false : playbackState.isFavorite
         self.playbackState = newPlaybackState
         
-        // Fetch favorite state for supported apps asynchronously
-        // await fetchFavoriteStateIfSupported()
+        if trackChanged {
+            Task { await self.fetchFavoriteStateIfSupported() }
+        }
     }
     
-     private func fetchFavoriteStateIfSupported() async {
-         let bundleID = playbackState.bundleIdentifier
-        
-         if bundleID == "com.apple.Music" {
-             let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
-             guard !runningApps.isEmpty else { return }
-             
-             let script = """
-             tell application "Music"
-                 try
-                     return favorited of current track
-                 on error
-                     return false
-                 end try
-             end tell
-             """
-             if let result = try? await AppleScriptHelper.execute(script) {
-                 var updated = self.playbackState
-                 updated.isFavorite = result.booleanValue
-                 self.playbackState = updated
-             }
-         }
-     }
-    
+    private func fetchFavoriteStateIfSupported() async {
+        let bundleID = playbackState.bundleIdentifier
+        let title = playbackState.title
+        var liked: Bool?
+
+        if bundleID == Self.netEaseBundleID {
+            liked = await XPCHelperClient.shared.netEaseLike(press: false)
+        } else if bundleID == "com.apple.Music" {
+            let runningApps = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.Music")
+            guard !runningApps.isEmpty else { return }
+
+            let script = """
+            tell application "Music"
+                try
+                    return favorited of current track
+                on error
+                    return false
+                end try
+            end tell
+            """
+            liked = (try? await AppleScriptHelper.execute(script))?.booleanValue
+        }
+
+        // The track may have changed while the app was being asked.
+        guard let liked, playbackState.title == title else { return }
+        var updated = self.playbackState
+        updated.isFavorite = liked
+        self.playbackState = updated
+    }
+
 }
 
 struct NowPlayingUpdate: Codable {

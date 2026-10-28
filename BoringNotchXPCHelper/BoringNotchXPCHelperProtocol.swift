@@ -23,6 +23,9 @@ import Foundation
     func isAccessibilityAuthorized(with reply: @escaping (Bool) -> Void)
     func requestAccessibilityAuthorization()
     func ensureAccessibilityAuthorization(_ promptIfNeeded: Bool, with reply: @escaping (Bool) -> Void)
+    /// Whether NetEase Cloud Music's current song is liked (nil when unavailable),
+    /// read from its Like menu item before pressing it when `press` is set.
+    func netEaseLike(_ press: Bool, with reply: @escaping (NSNumber?) -> Void)
     // Keyboard backlight / CoreBrightness access (performed by the helper)
     func isKeyboardBrightnessAvailable(with reply: @escaping (Bool) -> Void)
     func currentKeyboardBrightness(with reply: @escaping (NSNumber?) -> Void)
